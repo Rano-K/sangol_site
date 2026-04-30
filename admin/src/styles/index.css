@@ -1,0 +1,53 @@
+@import "tailwindcss";
+
+:root {
+  --color-primary: #2d5016;
+  --color-primary-light: #3d6b1f;
+  --color-secondary: #c4a574;
+  --color-background: #f8f9fa;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* Admin 공통 버튼 프레임: 버튼 영역 인지성 강화 */
+button {
+  border: 1px solid rgba(17, 24, 39, 0.18);
+  border-radius: 12px;
+  min-height: 36px;
+  padding: 0.5rem 0.9rem;
+  line-height: 1.1;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  transition: box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+button:hover {
+  border-color: rgba(17, 24, 39, 0.28);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+}
+
+button:disabled {
+  box-shadow: none;
+  opacity: 0.65;
+}
+
+/* 사이드바는 기존 버튼 스타일 유지 */
+.sidebar-nav button,
+.sidebar-logout-btn {
+  border: none;
+  border-radius: 0.75rem;
+  min-height: auto;
+  padding: 0.75rem 1rem;
+  box-shadow: none;
+}

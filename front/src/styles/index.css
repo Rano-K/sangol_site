@@ -1,0 +1,37 @@
+@import './fonts.css';
+@import './tailwind.css';
+@import './theme.css';
+
+:root {
+  --cms-front-font-family: 'Noto Sans KR', 'Malgun Gothic', sans-serif;
+  --cms-front-font-body-family: var(--cms-front-font-family);
+  --cms-front-font-heading-family: var(--cms-front-font-family);
+}
+
+html, body, #root {
+  font-family: var(--cms-front-font-body-family);
+}
+
+h1, h2, h3 {
+  font-family: var(--cms-front-font-heading-family);
+}
+
+/* 얇고 연한 톤 스크롤바 (Order 테이블/리스트 내부 스크롤용) */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.18) transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.18);
+  border-radius: 999px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}

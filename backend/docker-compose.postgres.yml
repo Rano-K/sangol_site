@@ -1,0 +1,21 @@
+# 로컬 PostgreSQL (제안서 DB 스키마 자동 적용)
+# 사용: cd backend && docker compose -f docker-compose.postgres.yml up -d
+# 포트 5432가 이미 사용 중이면 아래 ports를 "5433:5432" 등으로 바꿉니다.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: sangol-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: sangol
+      POSTGRES_PASSWORD: sangol_dev_change_me
+      POSTGRES_DB: sangol
+    ports:
+      - "5432:5432"
+    volumes:
+      - sangol_pg_data:/var/lib/postgresql/data
+      - ./database/postgres/init:/docker-entrypoint-initdb.d:ro
+
+volumes:
+  sangol_pg_data:

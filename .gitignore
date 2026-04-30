@@ -1,0 +1,44 @@
+# dependencies
+node_modules/
+**/node_modules/
+
+# env
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+
+# build outputs
+dist/
+**/dist/
+build/
+**/build/
+coverage/
+**/coverage/
+.vite/
+**/.vite/
+*.tsbuildinfo
+
+# logs
+logs/
+**/logs/
+*.log
+
+# local/system
+.DS_Store
+.cursor/
+.pydeps/
+
+# archives
+*.zip
+*.tar
+*.tar.gz
+
+# backend runtime uploads
+backend/uploads/
+
+# temp
+.tmp/
+**/.tmp/

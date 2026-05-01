@@ -1,3 +1,8 @@
+// process.env를 직접 여기저기서 읽지 않고,
+// backend/src/config/env.ts에서 한 번 검증한 뒤
+// 다른 파일들은 env.JWT_SECRET처럼 가져다 쓰게
+
+
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -55,7 +60,7 @@ export const env = {
   DB_NAME: getRequired('DB_NAME'),
   DB_USER: getRequired('DB_USER'),
   DB_PASSWORD: getRequired('DB_PASSWORD'),
-  JWT_SECRET: getOptional('JWT_SECRET', ''),
+  JWT_SECRET: ensureJwtSecret(getRequired('JWT_SECRET')),
   JWT_EXPIRES_IN: getOptional('JWT_EXPIRES_IN', '7d'),
   FRONTEND_URL: process.env.FRONTEND_URL?.trim() || '',
   ADMIN_URL: process.env.ADMIN_URL?.trim() || '',

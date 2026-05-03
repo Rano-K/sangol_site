@@ -1,5 +1,6 @@
 import express, { Request, Response } from 'express';
 import pool from '../config/database';
+import { buildPublicApiUrl, publicApiBaseUrl } from '../utils/publicUrls';
 
 const router = express.Router();
 
@@ -31,7 +32,8 @@ const ensureProductImageTableReady = async (): Promise<void> => {
   await pool.query('CREATE INDEX IF NOT EXISTS idx_product_images_order ON product_images(product_id, display_order ASC, id ASC);');
 };
 
-const parseHost = (req: Request): string => `${req.protocol}://${req.get('host')}`;
+const buildProductImageUrl = (productId: number | string): string =>
+  buildPublicApiUrl(`/products/${productId}/image-file`);
 
 // 모든 상품 조회
 router.get('/', async (req: Request, res: Response) => {
@@ -71,7 +73,7 @@ router.get('/', async (req: Request, res: Response) => {
                JSON_BUILD_OBJECT(
                  'id', pi.id,
                  'image_url', CASE
-                   WHEN pi.image_data IS NOT NULL THEN CONCAT($4::text, '/api/products/images/', pi.id, '/file')
+                   WHEN pi.image_data IS NOT NULL THEN CONCAT($4::text, '/products/images/', pi.id, '/file')
                    ELSE pi.image_url
                  END,
                  'is_primary', pi.is_primary,
@@ -94,13 +96,13 @@ router.get('/', async (req: Request, res: Response) => {
          GROUP BY p.id
          ORDER BY p.category, p.name
          LIMIT $2 OFFSET $3`,
-        [searchQ, limit, offset, parseHost(req)]
+        [searchQ, limit, offset, publicApiBaseUrl]
       );
 
       const items = rows.map((row: any) => ({
         ...row,
         image_items: Array.isArray(row.image_items) ? row.image_items : [],
-        image_url: row.has_db_image ? `${parseHost(req)}/api/products/${row.id}/image-file` : row.image_url,
+        image_url: row.has_db_image ? buildProductImageUrl(row.id) : row.image_url,
       }));
 
       res.json({
@@ -122,7 +124,7 @@ router.get('/', async (req: Request, res: Response) => {
              JSON_BUILD_OBJECT(
                'id', pi.id,
                'image_url', CASE
-                 WHEN pi.image_data IS NOT NULL THEN CONCAT($2::text, '/api/products/images/', pi.id, '/file')
+                 WHEN pi.image_data IS NOT NULL THEN CONCAT($2::text, '/products/images/', pi.id, '/file')
                  ELSE pi.image_url
                END,
                'is_primary', pi.is_primary,
@@ -144,13 +146,13 @@ router.get('/', async (req: Request, res: Response) => {
          )
        GROUP BY p.id
        ORDER BY p.category, p.name`,
-      [searchQ, parseHost(req)]
+      [searchQ, publicApiBaseUrl]
     );
     res.json(
       rows.map((row: any) => ({
         ...row,
         image_items: Array.isArray(row.image_items) ? row.image_items : [],
-        image_url: row.has_db_image ? `${parseHost(req)}/api/products/${row.id}/image-file` : row.image_url,
+        image_url: row.has_db_image ? buildProductImageUrl(row.id) : row.image_url,
       }))
     );
   } catch (error) {
@@ -175,7 +177,7 @@ router.get('/category/:category', async (req: Request, res: Response) => {
              JSON_BUILD_OBJECT(
                'id', pi.id,
                'image_url', CASE
-                 WHEN pi.image_data IS NOT NULL THEN CONCAT($2::text, '/api/products/images/', pi.id, '/file')
+                 WHEN pi.image_data IS NOT NULL THEN CONCAT($2::text, '/products/images/', pi.id, '/file')
                  ELSE pi.image_url
                END,
                'is_primary', pi.is_primary,
@@ -190,13 +192,13 @@ router.get('/category/:category', async (req: Request, res: Response) => {
        WHERE p.category = $1 AND p.is_active = TRUE
        GROUP BY p.id
        ORDER BY p.name`,
-      [category, parseHost(req)]
+      [category, publicApiBaseUrl]
     );
     res.json(
       rows.map((row: any) => ({
         ...row,
         image_items: Array.isArray(row.image_items) ? row.image_items : [],
-        image_url: row.has_db_image ? `${parseHost(req)}/api/products/${row.id}/image-file` : row.image_url,
+        image_url: row.has_db_image ? buildProductImageUrl(row.id) : row.image_url,
       }))
     );
   } catch (error) {

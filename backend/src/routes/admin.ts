@@ -3,6 +3,7 @@ import pool from '../config/database';
 import { authenticateToken, requireAdmin } from '../middleware/auth';
 import { body, param, validationResult, ValidationChain } from 'express-validator';
 import { ensureLocationFranchiseTableReady } from './franchises';
+import { buildPublicApiUrl, publicApiBaseUrl } from '../utils/publicUrls';
 
 const router = express.Router();
 const ALLOWED_IMAGE_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
@@ -151,7 +152,8 @@ const ensureFranchiseKeyColumnsReady = async (): Promise<void> => {
   `);
 };
 
-const parseHost = (req: Request): string => `${req.protocol}://${req.get('host')}`;
+const buildProductImageUrl = (productId: number | string): string =>
+  buildPublicApiUrl(`/products/${productId}/image-file`);
 const getExtensionFromName = (filename: string): string | null => {
   const normalized = filename.trim().toLowerCase();
   const dotIndex = normalized.lastIndexOf('.');
@@ -1116,7 +1118,7 @@ router.get('/products', async (_req: Request, res: Response) => {
              JSON_BUILD_OBJECT(
                'id', pi.id,
                'image_url', CASE
-                 WHEN pi.image_data IS NOT NULL THEN CONCAT($1::text, '/api/products/images/', pi.id, '/file')
+                 WHEN pi.image_data IS NOT NULL THEN CONCAT($1::text, '/products/images/', pi.id, '/file')
                  ELSE pi.image_url
                END,
                'is_primary', pi.is_primary,
@@ -1130,13 +1132,13 @@ router.get('/products', async (_req: Request, res: Response) => {
        LEFT JOIN product_images pi ON pi.product_id = p.id
        GROUP BY p.id
        ORDER BY p.category ASC, p.name ASC`,
-      [parseHost(_req)]
+      [publicApiBaseUrl]
     );
     res.json(
       rows.map((row: any) => ({
         ...row,
         image_items: Array.isArray(row.image_items) ? row.image_items : [],
-        image_url: row.has_db_image ? `${parseHost(_req)}/api/products/${row.id}/image-file` : row.image_url,
+        image_url: row.has_db_image ? buildProductImageUrl(row.id) : row.image_url,
       }))
     );
   } catch (error) {
@@ -1291,7 +1293,7 @@ router.post(
         message: '상품이 등록되었습니다.',
         product: {
           ...created,
-          image_url: created.has_db_image ? `${parseHost(req)}/api/products/${created.id}/image-file` : created.image_url,
+          image_url: created.has_db_image ? buildProductImageUrl(created.id) : created.image_url,
         },
       });
     } catch (error) {
@@ -1461,7 +1463,7 @@ router.patch(
         message: '상품이 수정되었습니다.',
         product: {
           ...updated,
-          image_url: updated.has_db_image ? `${parseHost(req)}/api/products/${updated.id}/image-file` : updated.image_url,
+          image_url: updated.has_db_image ? buildProductImageUrl(updated.id) : updated.image_url,
         },
       });
     } catch (error) {

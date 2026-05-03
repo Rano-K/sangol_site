@@ -5,6 +5,7 @@ import multer from 'multer';
 import { body, param, validationResult } from 'express-validator';
 import pool from '../config/database';
 import { authenticateToken, requireAdmin } from '../middleware/auth';
+import { buildPublicApiUrl, buildPublicAssetUrl } from '../utils/publicUrls';
 
 const router = express.Router();
 
@@ -143,7 +144,8 @@ const validate = (req: Request, res: Response): boolean => {
   return true;
 };
 
-const parseHost = (req: Request): string => `${req.protocol}://${req.get('host')}`;
+const buildCmsMediaFileUrl = (mediaId: number | string): string =>
+  buildPublicApiUrl(`/content/public/media/${mediaId}/file`);
 
 const normalizeUploadedOriginalName = (rawName: string): string => {
   // 일부 브라우저/환경에서 multipart 파일명이 latin1로 해석되어 한글이 깨지는 경우를 복구한다.
@@ -179,12 +181,12 @@ const mapMedia = (row: CmsMediaRow) => ({
   createdAt: row.created_at,
 });
 
-const mapPublicMedia = (req: Request, row: CmsMediaRow) => ({
+const mapPublicMedia = (row: CmsMediaRow) => ({
   id: row.id,
   originalName: row.original_name,
   mimeType: row.mime_type,
   sizeBytes: row.size_bytes,
-  fileUrl: `${parseHost(req)}/api/content/public/media/${row.id}/file`,
+  fileUrl: buildCmsMediaFileUrl(row.id),
   createdAt: row.created_at,
 });
 
@@ -231,7 +233,7 @@ router.get(
         res.status(404).json({ error: '이미지를 찾을 수 없습니다.' });
         return;
       }
-      res.json(mapPublicMedia(req, rows[0]));
+      res.json(mapPublicMedia(rows[0]));
     } catch (error) {
       console.error('Get public media meta error:', error);
       res.status(500).json({ error: '이미지 메타 조회 중 오류가 발생했습니다.' });
@@ -406,7 +408,7 @@ router.post(
     }
 
     const publicPath = `/uploads/cms/${req.file.filename}`;
-    const publicUrl = `${parseHost(req)}${publicPath}`;
+    const publicUrl = buildPublicAssetUrl(publicPath);
     const originalName = normalizeUploadedOriginalName(req.file.originalname);
     try {
       const { rows } = await pool.query<CmsMediaRow>(
@@ -450,7 +452,7 @@ router.post(
     }
 
     const publicPath = `/uploads/cms/${req.file.filename}`;
-    const publicUrl = `${parseHost(req)}${publicPath}`;
+    const publicUrl = buildPublicAssetUrl(publicPath);
     const originalName = normalizeUploadedOriginalName(req.file.originalname);
     try {
       const { rows } = await pool.query<CmsMediaRow>(
@@ -530,4 +532,3 @@ router.delete(
 );
 
 export default router;
-

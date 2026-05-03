@@ -3,7 +3,7 @@ import { body, param, validationResult } from 'express-validator';
 import pool from '../config/database';
 import { authenticateToken, requireAdmin } from '../middleware/auth';
 import jwt from 'jsonwebtoken';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import { env } from '../config/env';
 
 const router = express.Router();
@@ -654,4 +654,3 @@ router.delete(
 );
 
 export default router;
-

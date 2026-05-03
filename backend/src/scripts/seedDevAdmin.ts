@@ -1,5 +1,5 @@
 import dotenv from 'dotenv';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import pool from '../config/database';
 
 dotenv.config();
@@ -52,4 +52,3 @@ void main()
     console.error('❌ seedDevAdmin 실패:', err instanceof Error ? err.message : err);
     process.exit(1);
   });
-

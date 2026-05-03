@@ -1792,7 +1792,7 @@ router.post(
           resolvedFranchiseId = Number(franchiseId);
         }
       }
-      const bcrypt = await import('bcrypt');
+      const bcrypt = await import('bcryptjs');
       const hashed = await bcrypt.hash(password, 10);
       const { rows } = await pool.query(
         `INSERT INTO users (email, password, name, role, franchise_id, is_active)
@@ -1878,7 +1878,7 @@ router.patch(
 
       let hashedPassword: string | null = null;
       if (password) {
-        const bcrypt = await import('bcrypt');
+        const bcrypt = await import('bcryptjs');
         hashedPassword = await bcrypt.hash(password, 10);
       }
 

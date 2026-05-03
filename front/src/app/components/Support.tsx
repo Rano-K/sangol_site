@@ -3,31 +3,10 @@ import { useParams, Link } from "react-router";
 import { Search, ChevronDown, ChevronUp, Check, MessageSquare, HelpCircle, Bell } from "lucide-react";
 import { useCmsPage } from "../hooks/useCmsPage";
 import { API_BASE_URL } from "../lib/apiBaseUrl";
+import { toSafeNoticeHtml } from "../lib/sanitizeHtml";
 
 type NoticeRow = { id: number; title: string; content: string; is_important: boolean; created_at: string };
 type FaqRow = { id: number; category: string; q: string; a: string };
-
-const escapeHtml = (text: string): string =>
-  text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-
-const toSafeNoticeHtml = (content: string): string => {
-  const raw = String(content || "");
-  const hasHtmlTag = /<[^>]+>/.test(raw);
-  if (!hasHtmlTag) {
-    return escapeHtml(raw).replace(/\n/g, "<br />");
-  }
-  return raw
-    .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, "")
-    .replace(/<style[\s\S]*?>[\s\S]*?<\/style>/gi, "")
-    .replace(/\son\w+="[^"]*"/gi, "")
-    .replace(/\son\w+='[^']*'/gi, "")
-    .replace(/javascript:/gi, "");
-};
 
 function NoticeList({ notices }: { notices: NoticeRow[] }) {
   const PAGE_SIZE = 10;

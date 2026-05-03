@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { RichTextEditor } from './RichTextEditor';
 import { API_BASE_URL } from '../lib/apiBaseUrl';
+import { getPlainTextFromHtml, sanitizeRichHtml } from '../lib/sanitizeHtml';
 
 type FaqItem = {
   id: number;
@@ -129,12 +130,13 @@ export function FaqManager({ token }: FaqManagerProps) {
     e.preventDefault();
     if (!supportPage) return;
     try {
-      const answerPlainText = form.a.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+      const sanitizedAnswer = sanitizeRichHtml(form.a);
+      const answerPlainText = getPlainTextFromHtml(sanitizedAnswer);
       const trimmed = {
         ...form,
         category: form.category.trim(),
         q: form.q.trim(),
-        a: form.a,
+        a: sanitizedAnswer,
       };
       if (!trimmed.category || !trimmed.q || !answerPlainText) {
         window.alert('카테고리, 질문, 답변을 입력해 주세요.');
@@ -156,7 +158,7 @@ export function FaqManager({ token }: FaqManagerProps) {
 
   const startEdit = (item: FaqItem) => {
     setEditingId(item.id);
-    setForm(item);
+    setForm({ ...item, a: sanitizeRichHtml(item.a) });
   };
 
   const removeFaq = async (id: number) => {

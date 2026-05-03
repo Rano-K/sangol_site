@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { RichTextEditor } from './RichTextEditor';
 import { API_BASE_URL } from '../lib/apiBaseUrl';
+import { getPlainTextFromHtml, sanitizeRichHtml } from '../lib/sanitizeHtml';
 
 type NoticeRow = {
   id: number;
@@ -71,7 +72,8 @@ export function Notices({ token }: NoticesProps) {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    const plainText = form.content.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+    const sanitizedContent = sanitizeRichHtml(form.content);
+    const plainText = getPlainTextFromHtml(sanitizedContent);
     if (!plainText) {
       window.alert('공지 내용을 입력해 주세요.');
       return;
@@ -88,7 +90,7 @@ export function Notices({ token }: NoticesProps) {
           },
           body: JSON.stringify({
             title: form.title,
-            content: form.content,
+            content: sanitizedContent,
             author: form.author,
             isImportant: form.isImportant,
             isActive: form.isActive,
@@ -109,7 +111,7 @@ export function Notices({ token }: NoticesProps) {
     setEditingId(notice.id);
     setForm({
       title: notice.title,
-      content: notice.content,
+      content: sanitizeRichHtml(notice.content),
       author: notice.author || 'SANGOL ADMIN',
       isImportant: notice.is_important,
       isActive: notice.is_active,

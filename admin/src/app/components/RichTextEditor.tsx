@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { sanitizeRichHtml } from "../lib/sanitizeHtml";
 
 interface RichTextEditorProps {
   value: string;
@@ -28,17 +29,22 @@ export function RichTextEditor({
   useEffect(() => {
     const editor = editorRef.current;
     if (!editor) return;
-    if (editor.innerHTML !== value) {
-      editor.innerHTML = value || "";
+    const sanitizedValue = sanitizeRichHtml(value);
+    if (editor.innerHTML !== sanitizedValue) {
+      editor.innerHTML = sanitizedValue;
     }
   }, [value]);
+
+  const emitChange = (editor: HTMLDivElement) => {
+    onChange(sanitizeRichHtml(editor.innerHTML));
+  };
 
   const runCommand = (command: string, commandValue?: string) => {
     const editor = editorRef.current;
     if (!editor) return;
     editor.focus();
     document.execCommand(command, false, commandValue);
-    onChange(editor.innerHTML);
+    emitChange(editor);
     setSelectionTick((prev) => prev + 1);
   };
 
@@ -55,7 +61,7 @@ export function RichTextEditor({
     } catch (_error) {
       // ignore
     }
-    onChange(editor.innerHTML);
+    emitChange(editor);
     setSelectionTick((prev) => prev + 1);
   };
 
@@ -148,7 +154,7 @@ export function RichTextEditor({
 
     // 인용 토글: 적용/해제 모두 실제 문서 블록 상태 변경
     document.execCommand("formatBlock", false, isInBlockquote ? "p" : "blockquote");
-    onChange(editor.innerHTML);
+    emitChange(editor);
     setSelectionTick((prev) => prev + 1);
   };
 
@@ -188,7 +194,7 @@ export function RichTextEditor({
     document.execCommand("outdent");
     document.execCommand("formatBlock", false, "p");
     clearTypingStyleState();
-    onChange(editor.innerHTML);
+    emitChange(editor);
     setSelectionTick((prev) => prev + 1);
     return true;
   };
@@ -341,11 +347,10 @@ export function RichTextEditor({
             window.setTimeout(() => moveCaretOutsideInlineStyleIfNeeded("forward"), 0);
           }
         }}
-        onInput={(event) => onChange(event.currentTarget.innerHTML)}
+        onInput={(event) => emitChange(event.currentTarget)}
         className={editorClassName}
         data-placeholder={placeholder}
       />
     </div>
   );
 }
-

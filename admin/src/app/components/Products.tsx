@@ -324,6 +324,10 @@ export function Products({ token }: ProductsProps) {
       { base64: null, mimeType: null, originalName: null },
       { base64: null, mimeType: null, originalName: null },
     ]);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    additionalFileInputRefs.current.forEach((input) => {
+      if (input) input.value = '';
+    });
     setIsModalOpen(true);
   };
 
@@ -378,6 +382,10 @@ export function Products({ token }: ProductsProps) {
       { base64: null, mimeType: null, originalName: null },
       { base64: null, mimeType: null, originalName: null },
     ]);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    additionalFileInputRefs.current.forEach((input) => {
+      if (input) input.value = '';
+    });
     setIsModalOpen(true);
   };
 

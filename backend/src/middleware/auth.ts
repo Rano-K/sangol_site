@@ -60,3 +60,35 @@ export const requireFranchise = (req: Request, res: Response, next: NextFunction
   }
   next();
 };
+
+/** 공개 API에서 선택적으로 사용자 컨텍스트를 붙입니다(토큰 없음/무효 시 게스트). */
+export const optionalAuthenticateToken = async (
+  req: Request,
+  _res: Response,
+  next: NextFunction
+): Promise<void> => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) {
+    next();
+    return;
+  }
+
+  try {
+    const decoded = jwt.verify(token, env.JWT_SECRET) as UserPayload;
+    const { rows } = await pool.query<{ is_active: boolean }>(
+      'SELECT is_active FROM users WHERE id = $1 LIMIT 1',
+      [decoded.id]
+    );
+    if (rows.length > 0 && rows[0].is_active) {
+      req.user = decoded;
+    }
+  } catch (_error) {
+    // invalid token → treat as guest
+  }
+
+  next();
+};
+
+export const canViewWipProducts = (req: Request): boolean => req.user?.role === 'franchise';

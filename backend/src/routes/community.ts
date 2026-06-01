@@ -15,6 +15,7 @@ type CommunityPostRow = {
   author_name: string;
   views: number;
   is_secret: boolean;
+  is_active?: boolean;
   post_password_hash?: string | null;
   created_at: string;
   updated_at: string;
@@ -23,6 +24,7 @@ type CommunityPostRow = {
 type CommunityCommentRow = {
   id: number;
   post_id: number;
+  parent_comment_id?: number | null;
   author_name: string;
   content: string;
   created_at: string;
@@ -133,11 +135,16 @@ const ensureCommunityTablesReady = async (): Promise<void> => {
         CREATE TABLE IF NOT EXISTS community_comments (
           id BIGSERIAL PRIMARY KEY,
           post_id BIGINT NOT NULL REFERENCES community_posts(id) ON DELETE CASCADE,
+          parent_comment_id BIGINT REFERENCES community_comments(id) ON DELETE CASCADE,
           author_name VARCHAR(100) NOT NULL,
           content TEXT NOT NULL,
           is_active BOOLEAN NOT NULL DEFAULT TRUE,
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
+      `);
+      await pool.query(`
+        ALTER TABLE community_comments
+        ADD COLUMN IF NOT EXISTS parent_comment_id BIGINT REFERENCES community_comments(id) ON DELETE CASCADE;
       `);
 
       await pool.query(`
@@ -217,7 +224,10 @@ router.get('/posts', async (req: Request, res: Response) => {
     const { rows } = await pool.query<CommunityPostRow>(
       `SELECT
          id,
-         title,
+         CASE
+           WHEN is_secret = TRUE AND $1::boolean = FALSE THEN '비밀글입니다.'
+           ELSE title
+         END AS title,
          CASE
            WHEN is_secret = TRUE AND $1::boolean = FALSE THEN '비밀글입니다. 관리자만 확인할 수 있습니다.'
            ELSE content
@@ -253,14 +263,18 @@ router.get(
     const postId = Number(req.params.id);
     try {
       const { rows: postRows } = await pool.query<CommunityPostRow>(
-        `SELECT id, title, content, author_name, views, is_secret, post_password_hash, created_at, updated_at
+        `SELECT id, title, content, author_name, views, is_secret, post_password_hash, is_active, created_at, updated_at
          FROM community_posts
-         WHERE id = $1 AND is_active = TRUE`,
+         WHERE id = $1`,
         [postId]
       );
 
       if (postRows.length === 0) {
         res.status(404).json({ error: '게시글을 찾을 수 없습니다.' });
+        return;
+      }
+      if (postRows[0].is_active === false) {
+        res.status(410).json({ error: '삭제된 게시글입니다.' });
         return;
       }
 
@@ -282,10 +296,10 @@ router.get(
       await pool.query('UPDATE community_posts SET views = views + 1, updated_at = NOW() WHERE id = $1', [postId]);
 
       const { rows: commentRows } = await pool.query<CommunityCommentRow>(
-        `SELECT id, post_id, author_name, content, created_at
+        `SELECT id, post_id, parent_comment_id, author_name, content, created_at
          FROM community_comments
          WHERE post_id = $1 AND is_active = TRUE
-         ORDER BY created_at ASC`,
+         ORDER BY COALESCE(parent_comment_id, id) ASC, parent_comment_id ASC NULLS FIRST, created_at ASC`,
         [postId]
       );
 
@@ -369,6 +383,7 @@ router.post(
 router.post(
   '/posts/:id/comments',
   param('id').isInt({ min: 1 }),
+  body('parentCommentId').optional({ nullable: true }).isInt({ min: 1 }),
   body('authorName').isString().trim().isLength({ min: 1, max: 100 }),
   body('content').isString().trim().isLength({ min: 1 }),
   async (req: Request, res: Response) => {
@@ -376,7 +391,11 @@ router.post(
     if (!validate(req, res)) return;
 
     const postId = Number(req.params.id);
-    const { authorName, content } = req.body as { authorName: string; content: string };
+    const { authorName, content, parentCommentId = null } = req.body as {
+      authorName: string;
+      content: string;
+      parentCommentId?: number | null;
+    };
 
     try {
       const { rows: postExistsRows } = await pool.query<{ id: number; is_secret: boolean }>(
@@ -394,12 +413,24 @@ router.post(
         res.status(403).json({ error: '비밀글에는 관리자만 댓글을 작성할 수 있습니다.' });
         return;
       }
+      if (parentCommentId) {
+        const { rows: parentRows } = await pool.query<{ id: number }>(
+          `SELECT id
+           FROM community_comments
+           WHERE id = $1 AND post_id = $2 AND is_active = TRUE`,
+          [parentCommentId, postId]
+        );
+        if (parentRows.length === 0) {
+          res.status(400).json({ error: '유효한 부모 댓글이 아닙니다.' });
+          return;
+        }
+      }
 
       const { rows } = await pool.query<CommunityCommentRow>(
-        `INSERT INTO community_comments (post_id, author_name, content)
-         VALUES ($1, $2, $3)
-         RETURNING id, post_id, author_name, content, created_at`,
-        [postId, authorName, content]
+        `INSERT INTO community_comments (post_id, parent_comment_id, author_name, content)
+         VALUES ($1, $2, $3, $4)
+         RETURNING id, post_id, parent_comment_id, author_name, content, created_at`,
+        [postId, parentCommentId ?? null, authorName, content]
       );
 
       res.status(201).json({ message: '댓글이 등록되었습니다.', comment: rows[0] });
@@ -649,6 +680,297 @@ router.delete(
     } catch (error) {
       console.error('Delete concert video error:', error);
       res.status(500).json({ error: '작은 음악회 영상 삭제 중 오류가 발생했습니다.' });
+    }
+  }
+);
+
+// Admin: 산골소통방 게시글 목록
+router.get('/admin/posts', authenticateToken, requireAdmin, async (_req: Request, res: Response) => {
+  await ensureCommunityTablesReady();
+  try {
+    const { rows } = await pool.query(
+      `SELECT p.id, p.title, p.content, p.author_name, p.views, p.is_secret, p.is_active, p.created_at, p.updated_at,
+              COALESCE(COUNT(c.id), 0)::int AS comment_count
+       FROM community_posts p
+       LEFT JOIN community_comments c ON c.post_id = p.id AND c.is_active = TRUE
+       WHERE p.is_active = TRUE
+       GROUP BY p.id
+       ORDER BY p.created_at DESC`
+    );
+    res.json(rows);
+  } catch (error) {
+    console.error('Get admin community posts error:', error);
+    res.status(500).json({ error: '산골소통방 게시글 목록 조회 중 오류가 발생했습니다.' });
+  }
+});
+
+// Admin: 산골소통방 게시글 상세 + 댓글
+router.get(
+  '/admin/posts/:id',
+  authenticateToken,
+  requireAdmin,
+  param('id').isInt({ min: 1 }),
+  async (req: Request, res: Response) => {
+    await ensureCommunityTablesReady();
+    if (!validate(req, res)) return;
+    const postId = Number(req.params.id);
+    try {
+      const { rows: postRows } = await pool.query(
+        `SELECT id, title, content, author_name, views, is_secret, is_active, created_at, updated_at
+         FROM community_posts
+         WHERE id = $1`,
+        [postId]
+      );
+      if (postRows.length === 0) {
+        res.status(404).json({ error: '게시글을 찾을 수 없습니다.' });
+        return;
+      }
+      const { rows: comments } = await pool.query(
+        `SELECT id, post_id, parent_comment_id, author_name, content, is_active, created_at
+         FROM community_comments
+         WHERE post_id = $1
+         ORDER BY COALESCE(parent_comment_id, id) ASC, parent_comment_id ASC NULLS FIRST, created_at ASC`,
+        [postId]
+      );
+      res.json({ post: postRows[0], comments });
+    } catch (error) {
+      console.error('Get admin community post detail error:', error);
+      res.status(500).json({ error: '게시글 상세 조회 중 오류가 발생했습니다.' });
+    }
+  }
+);
+
+// Admin: 산골소통방 게시글 등록
+router.post(
+  '/admin/posts',
+  authenticateToken,
+  requireAdmin,
+  body('title').isString().trim().isLength({ min: 1, max: 255 }),
+  body('content').isString().trim().isLength({ min: 1 }),
+  body('authorName').isString().trim().isLength({ min: 1, max: 100 }),
+  body('isSecret').optional().isBoolean(),
+  body('postPassword').optional().isString().isLength({ min: 4, max: 100 }),
+  body('isActive').optional().isBoolean(),
+  async (req: Request, res: Response) => {
+    await ensureCommunityTablesReady();
+    if (!validate(req, res)) return;
+    const { title, content, authorName, isSecret = false, postPassword = null, isActive = true } = req.body as {
+      title: string;
+      content: string;
+      authorName: string;
+      isSecret?: boolean;
+      postPassword?: string | null;
+      isActive?: boolean;
+    };
+    try {
+      const postPasswordHash = isSecret && postPassword ? await bcrypt.hash(postPassword, 10) : null;
+      const { rows } = await pool.query(
+        `INSERT INTO community_posts (title, content, author_name, is_secret, post_password_hash, is_active)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING id, title, content, author_name, views, is_secret, is_active, created_at, updated_at`,
+        [title, content, authorName, isSecret, postPasswordHash, isActive]
+      );
+      res.status(201).json({ message: '게시글이 등록되었습니다.', post: rows[0] });
+    } catch (error) {
+      console.error('Create admin community post error:', error);
+      res.status(500).json({ error: '게시글 등록 중 오류가 발생했습니다.' });
+    }
+  }
+);
+
+// Admin: 산골소통방 게시글 수정
+router.patch(
+  '/admin/posts/:id',
+  authenticateToken,
+  requireAdmin,
+  param('id').isInt({ min: 1 }),
+  body('title').optional().isString().trim().isLength({ min: 1, max: 255 }),
+  body('content').optional().isString().trim().isLength({ min: 1 }),
+  body('authorName').optional().isString().trim().isLength({ min: 1, max: 100 }),
+  body('isSecret').optional().isBoolean(),
+  body('postPassword').optional({ nullable: true }).isString().isLength({ min: 4, max: 100 }),
+  body('isActive').optional().isBoolean(),
+  async (req: Request, res: Response) => {
+    await ensureCommunityTablesReady();
+    if (!validate(req, res)) return;
+    const postId = Number(req.params.id);
+    const { title, content, authorName, isSecret, postPassword, isActive } = req.body as {
+      title?: string;
+      content?: string;
+      authorName?: string;
+      isSecret?: boolean;
+      postPassword?: string | null;
+      isActive?: boolean;
+    };
+    try {
+      let postPasswordHash: string | null | undefined = undefined;
+      if (typeof postPassword === 'string' && postPassword.trim().length > 0) {
+        postPasswordHash = await bcrypt.hash(postPassword, 10);
+      } else if (postPassword === null) {
+        postPasswordHash = null;
+      }
+      const { rows } = await pool.query(
+        `UPDATE community_posts
+         SET
+           title = COALESCE($1, title),
+           content = COALESCE($2, content),
+           author_name = COALESCE($3, author_name),
+           is_secret = COALESCE($4, is_secret),
+           post_password_hash = COALESCE($5, post_password_hash),
+           is_active = COALESCE($6, is_active),
+           updated_at = NOW()
+         WHERE id = $7
+         RETURNING id, title, content, author_name, views, is_secret, is_active, created_at, updated_at`,
+        [title ?? null, content ?? null, authorName ?? null, isSecret ?? null, postPasswordHash, isActive ?? null, postId]
+      );
+      if (rows.length === 0) {
+        res.status(404).json({ error: '수정할 게시글을 찾을 수 없습니다.' });
+        return;
+      }
+      res.json({ message: '게시글이 수정되었습니다.', post: rows[0] });
+    } catch (error) {
+      console.error('Update admin community post error:', error);
+      res.status(500).json({ error: '게시글 수정 중 오류가 발생했습니다.' });
+    }
+  }
+);
+
+// Admin: 산골소통방 게시글 삭제(비활성)
+router.delete(
+  '/admin/posts/:id',
+  authenticateToken,
+  requireAdmin,
+  param('id').isInt({ min: 1 }),
+  async (req: Request, res: Response) => {
+    await ensureCommunityTablesReady();
+    if (!validate(req, res)) return;
+    const postId = Number(req.params.id);
+    try {
+      const result = await pool.query(
+        `UPDATE community_posts
+         SET is_active = FALSE, updated_at = NOW()
+         WHERE id = $1`,
+        [postId]
+      );
+      if ((result.rowCount ?? 0) === 0) {
+        res.status(404).json({ error: '삭제할 게시글을 찾을 수 없습니다.' });
+        return;
+      }
+      res.json({ message: '게시글이 삭제(비활성) 처리되었습니다.' });
+    } catch (error) {
+      console.error('Delete admin community post error:', error);
+      res.status(500).json({ error: '게시글 삭제 중 오류가 발생했습니다.' });
+    }
+  }
+);
+
+// Admin: 산골소통방 댓글 등록
+router.post(
+  '/admin/posts/:id/comments',
+  authenticateToken,
+  requireAdmin,
+  param('id').isInt({ min: 1 }),
+  body('parentCommentId').optional({ nullable: true }).isInt({ min: 1 }),
+  body('authorName').isString().trim().isLength({ min: 1, max: 100 }),
+  body('content').isString().trim().isLength({ min: 1 }),
+  async (req: Request, res: Response) => {
+    await ensureCommunityTablesReady();
+    if (!validate(req, res)) return;
+    const postId = Number(req.params.id);
+    const { authorName, content, parentCommentId = null } = req.body as {
+      authorName: string;
+      content: string;
+      parentCommentId?: number | null;
+    };
+    try {
+      const exists = await pool.query('SELECT id FROM community_posts WHERE id = $1', [postId]);
+      if (exists.rows.length === 0) {
+        res.status(404).json({ error: '게시글을 찾을 수 없습니다.' });
+        return;
+      }
+      if (parentCommentId) {
+        const { rows: parentRows } = await pool.query<{ id: number }>(
+          `SELECT id
+           FROM community_comments
+           WHERE id = $1 AND post_id = $2 AND is_active = TRUE`,
+          [parentCommentId, postId]
+        );
+        if (parentRows.length === 0) {
+          res.status(400).json({ error: '유효한 부모 댓글이 아닙니다.' });
+          return;
+        }
+      }
+      const { rows } = await pool.query(
+        `INSERT INTO community_comments (post_id, parent_comment_id, author_name, content)
+         VALUES ($1, $2, $3, $4)
+         RETURNING id, post_id, parent_comment_id, author_name, content, is_active, created_at`,
+        [postId, parentCommentId ?? null, authorName, content]
+      );
+      res.status(201).json({ message: '댓글이 등록되었습니다.', comment: rows[0] });
+    } catch (error) {
+      console.error('Create admin community comment error:', error);
+      res.status(500).json({ error: '댓글 등록 중 오류가 발생했습니다.' });
+    }
+  }
+);
+
+// Admin: 산골소통방 댓글 수정
+router.patch(
+  '/admin/comments/:id',
+  authenticateToken,
+  requireAdmin,
+  param('id').isInt({ min: 1 }),
+  body('content').isString().trim().isLength({ min: 1 }),
+  async (req: Request, res: Response) => {
+    await ensureCommunityTablesReady();
+    if (!validate(req, res)) return;
+    const commentId = Number(req.params.id);
+    const { content } = req.body as { content: string };
+    try {
+      const { rows } = await pool.query(
+        `UPDATE community_comments
+         SET content = $1
+         WHERE id = $2
+         RETURNING id, post_id, parent_comment_id, author_name, content, is_active, created_at`,
+        [content, commentId]
+      );
+      if (rows.length === 0) {
+        res.status(404).json({ error: '수정할 댓글을 찾을 수 없습니다.' });
+        return;
+      }
+      res.json({ message: '댓글이 수정되었습니다.', comment: rows[0] });
+    } catch (error) {
+      console.error('Update admin community comment error:', error);
+      res.status(500).json({ error: '댓글 수정 중 오류가 발생했습니다.' });
+    }
+  }
+);
+
+// Admin: 산골소통방 댓글 삭제(비활성)
+router.delete(
+  '/admin/comments/:id',
+  authenticateToken,
+  requireAdmin,
+  param('id').isInt({ min: 1 }),
+  async (req: Request, res: Response) => {
+    await ensureCommunityTablesReady();
+    if (!validate(req, res)) return;
+    const commentId = Number(req.params.id);
+    try {
+      const result = await pool.query(
+        `UPDATE community_comments
+         SET is_active = FALSE
+         WHERE id = $1`,
+        [commentId]
+      );
+      if ((result.rowCount ?? 0) === 0) {
+        res.status(404).json({ error: '삭제할 댓글을 찾을 수 없습니다.' });
+        return;
+      }
+      res.json({ message: '댓글이 삭제(비활성) 처리되었습니다.' });
+    } catch (error) {
+      console.error('Delete admin community comment error:', error);
+      res.status(500).json({ error: '댓글 삭제 중 오류가 발생했습니다.' });
     }
   }
 );

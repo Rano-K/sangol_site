@@ -1,16 +1,36 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router";
-import { ArrowRight, Award, CheckCircle2, ChevronRight, MessageCircle, Phone, Shield, Truck, Volume2, Leaf } from "lucide-react";
+import { ArrowRight, Award, CheckCircle2, ChevronRight, MessageCircle, Phone, Shield, Truck, Leaf } from "lucide-react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useCmsPage } from "../hooks/useCmsPage";
+import { useAuth } from "../hooks/useAuth";
 import { API_BASE_URL } from "../lib/apiBaseUrl";
+import { getCommunityPostListTitle } from "../lib/communityPost";
+import { buildProductCatalogHref } from "../lib/productCatalog";
+import { Carousel, CarouselContent, CarouselItem, CarouselNext, CarouselPrevious, type CarouselApi } from "./ui/carousel";
+import { cn } from "./ui/utils";
+
+const HERO_SLIDE_MS = 6000;
+const POPULAR_CAROUSEL_MS = 2000;
+const POPULAR_PRODUCT_LIMIT = 16;
+/** max-w-7xl 4열 그리드와 동일한 카드 폭(사진 크기 유지) */
+const POPULAR_CARD_CLASS = "pl-4 basis-[280px] sm:basis-[300px]";
 
 type HomeCard = { title: string; desc: string; link: string; img: string };
-type HomeProduct = { name: string; category: string; img: string; link?: string };
+type HomeProduct = { id?: number; name: string; category: string; img: string; link?: string; price: number };
+type ProductApiRow = {
+  id: number;
+  name: string;
+  category: string;
+  image_url?: string | null;
+  price?: string | number | null;
+  is_active?: boolean;
+};
 type HomeCommunityPost = { title: string; date: string; link: string };
-type CommunityPostApiRow = { id: number; title: string; created_at: string };
+type CommunityPostApiRow = { id: number; title: string; created_at: string; is_secret?: boolean };
 type NoticeRow = { id: number; title: string; is_important: boolean; created_at: string };
 type HomeHeroAction = { label: string; link: string; variant: "primary" | "outline" };
-type HomeTrustBadge = { title: string; desc: string };
+type HomeTrustBadge = { title: string; desc: string; iconUrl?: string };
 
 const DEFAULT_HERO_IMAGES = [
   "https://images.unsplash.com/photo-1733837323673-da9b3a98135e?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1920",
@@ -26,11 +46,48 @@ const DEFAULT_FEATURES: HomeCard[] = [
 ];
 
 const DEFAULT_PRODUCTS: HomeProduct[] = [
-  { name: "명품 산양삼", category: "임산물", img: "https://images.unsplash.com/photo-1622256075005-551338a107fb?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080", link: "/products/forest" },
-  { name: "고냉지 토마토", category: "농산물", img: "https://images.unsplash.com/photo-1631292171396-26a654f51c48?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080", link: "/products/agriculture" },
-  { name: "생표고버섯", category: "임산물", img: "https://images.unsplash.com/photo-1603651645989-3c7d3520a912?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080", link: "/products/forest" },
-  { name: "산골 식혜·수정과", category: "가공제품", img: "https://images.unsplash.com/photo-1715017245420-9638115138a4?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080", link: "/products/manufactured" },
+  { name: "명품 산양삼", category: "임산물", img: "https://images.unsplash.com/photo-1622256075005-551338a107fb?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080", link: "/products/forest", price: 0 },
+  { name: "고냉지 토마토", category: "농산물", img: "https://images.unsplash.com/photo-1631292171396-26a654f51c48?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080", link: "/products/agriculture", price: 0 },
+  { name: "생표고버섯", category: "임산물", img: "https://images.unsplash.com/photo-1603651645989-3c7d3520a912?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080", link: "/products/forest", price: 0 },
+  { name: "산골 식혜·수정과", category: "가공제품", img: "https://images.unsplash.com/photo-1715017245420-9638115138a4?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080", link: "/products/manufactured", price: 0 },
 ];
+
+const parseProductPrice = (price: ProductApiRow["price"]): number => {
+  if (price === null || price === undefined) return 0;
+  const parsed = Number(price);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const formatProductPriceLabel = (price: number): string =>
+  price > 0 ? `${price.toLocaleString("ko-KR")}원` : "가격 문의";
+
+/** 카테고리를 골고루 섞어 인기 상품 목록 구성 */
+const pickDiversePopularProducts = (rows: ProductApiRow[], limit: number): ProductApiRow[] => {
+  const buckets = new Map<string, ProductApiRow[]>();
+  for (const row of rows) {
+    const category = String(row.category || "").trim() || "기타";
+    const list = buckets.get(category) ?? [];
+    list.push(row);
+    buckets.set(category, list);
+  }
+  const categories = [...buckets.keys()].sort((a, b) => a.localeCompare(b, "ko"));
+  const picked: ProductApiRow[] = [];
+  let round = 0;
+  while (picked.length < limit) {
+    let added = false;
+    for (const category of categories) {
+      const list = buckets.get(category) ?? [];
+      if (round < list.length) {
+        picked.push(list[round]);
+        added = true;
+        if (picked.length >= limit) break;
+      }
+    }
+    if (!added) break;
+    round += 1;
+  }
+  return picked.length > 0 ? picked : rows.slice(0, limit);
+};
 
 const formatDateYMD = (value: string): string => {
   const d = new Date(value);
@@ -43,15 +100,17 @@ const formatDateYMD = (value: string): string => {
 
 const DEFAULT_HERO_ACTIONS: HomeHeroAction[] = [
   { label: "상품 둘러보기", link: "/products/forest", variant: "primary" },
-  { label: "가맹점 주문하기", link: "/order", variant: "outline" },
 ];
 
 const DEFAULT_TRUST_BADGES: HomeTrustBadge[] = [
-  { title: "안전한 원산지", desc: "산지 추적 관리" },
-  { title: "품질 인증", desc: "엄격한 선별 기준" },
-  { title: "빠른 배송", desc: "신선도 우선 출고" },
-  { title: "검수 완료", desc: "출고 전 품질 점검" },
+  { title: "안전한 원산지", desc: "산지 추적 관리", iconUrl: "https://img.icons8.com/color/96/certificate.png" },
+  { title: "품질 인증", desc: "엄격한 선별 기준", iconUrl: "https://img.icons8.com/color/96/medal2.png" },
+  { title: "빠른 배송", desc: "신선도 우선 출고", iconUrl: "https://img.icons8.com/color/96/delivery.png" },
+  { title: "검수 완료", desc: "출고 전 품질 점검", iconUrl: "https://img.icons8.com/color/96/checked--v1.png" },
 ];
+
+const LEGACY_HERO_TITLE = "자연의 가치를 지키고\n소비자의 삶에 건강과\n행복을 더하는 것을\n목표로 하고 있습니다.";
+const UPDATED_HERO_TITLE = "자연의 생명력을 그대로 담아,\n(주)산골이 건강한 약속을 전합니다";
 
 const withFixedFeatureLinks = (items: HomeCard[]): HomeCard[] =>
   items.map((item, index) => ({
@@ -59,15 +118,12 @@ const withFixedFeatureLinks = (items: HomeCard[]): HomeCard[] =>
     link: DEFAULT_FEATURES[index]?.link || item.link,
   }));
 
-const withFixedProductLinks = (items: HomeProduct[]): HomeProduct[] =>
-  items.map((item, index) => ({
-    ...item,
-    link: DEFAULT_PRODUCTS[index]?.link || item.link,
-  }));
-
 export function Home() {
   const [currentSlide, setCurrentSlide] = useState(0);
+  const reduceMotion = useReducedMotion();
   const { data } = useCmsPage("home");
+  const { user, token } = useAuth();
+  const isFranchiseUser = user?.role === "franchise";
   const sections = (data?.sections ?? {}) as Record<string, unknown>;
   const heroSection = (sections.hero ?? {}) as Record<string, string>;
   const introSection = (sections.intro ?? {}) as Record<string, string>;
@@ -76,16 +132,27 @@ export function Home() {
   const [communityLoading, setCommunityLoading] = useState(true);
   const [notices, setNotices] = useState<NoticeRow[]>([]);
   const [noticesLoading, setNoticesLoading] = useState(true);
+  const [popularProducts, setPopularProducts] = useState<HomeProduct[]>([]);
+  const [popularCarouselApi, setPopularCarouselApi] = useState<CarouselApi>();
+  const [isPopularCarouselPaused, setIsPopularCarouselPaused] = useState(false);
 
   const heroImages =
     Array.isArray(sections.heroImages) && sections.heroImages.length > 0
       ? (sections.heroImages as string[])
       : DEFAULT_HERO_IMAGES;
-  // 요구사항: admin에서는 “이미지만” 대체되도록 배열/텍스트/정렬은 기본값 유지
+  // admin에서 홈 카드(핵심역량) 텍스트/이미지를 함께 수정 가능
   const cmsFeatures = Array.isArray(sections.features) ? (sections.features as Partial<HomeCard>[]) : [];
   const features = withFixedFeatureLinks(
     DEFAULT_FEATURES.map((base, idx) => ({
       ...base,
+      title:
+        typeof cmsFeatures[idx]?.title === "string" && cmsFeatures[idx]?.title
+          ? String(cmsFeatures[idx].title)
+          : base.title,
+      desc:
+        typeof cmsFeatures[idx]?.desc === "string" && cmsFeatures[idx]?.desc
+          ? String(cmsFeatures[idx].desc)
+          : base.desc,
       img:
         typeof cmsFeatures[idx]?.img === "string" && cmsFeatures[idx]?.img
           ? String(cmsFeatures[idx].img)
@@ -93,37 +160,36 @@ export function Home() {
     }))
   );
 
-  const cmsFeaturedCards = Array.isArray(sections.featuredCards)
-    ? (sections.featuredCards as Partial<HomeProduct>[])
-    : Array.isArray(sections.products)
-      ? (sections.products as Partial<HomeProduct>[])
-      : [];
-  const featuredCards = withFixedProductLinks(
-    DEFAULT_PRODUCTS.map((base, idx) => ({
-      ...base,
-      img:
-        typeof cmsFeaturedCards[idx]?.img === "string" && cmsFeaturedCards[idx]?.img
-          ? String(cmsFeaturedCards[idx].img)
-          : base.img,
-    }))
-  );
   const supportSection = (sections.support ?? {}) as Record<string, string>;
-  const heroActions =
+  const heroActions = (
     Array.isArray(sections.heroActions) && sections.heroActions.length > 0
       ? (sections.heroActions as HomeHeroAction[])
-      : DEFAULT_HERO_ACTIONS;
+      : DEFAULT_HERO_ACTIONS
+  ).filter((action) => action.link !== "/order");
   const trustBadges =
     Array.isArray(sections.trustBadges) && sections.trustBadges.length > 0
       ? (sections.trustBadges as HomeTrustBadge[])
       : DEFAULT_TRUST_BADGES;
 
-  // Auto-slide effect
+
   useEffect(() => {
     const timer = setInterval(() => {
       setCurrentSlide((prev) => (prev + 1) % heroImages.length);
-    }, 5000);
+    }, HERO_SLIDE_MS);
     return () => clearInterval(timer);
   }, [heroImages.length]);
+
+  useEffect(() => {
+    if (!popularCarouselApi || isPopularCarouselPaused || popularProducts.length < 2) return;
+    const timer = window.setInterval(() => {
+      if (popularCarouselApi.canScrollNext()) {
+        popularCarouselApi.scrollNext();
+      } else {
+        popularCarouselApi.scrollTo(0);
+      }
+    }, POPULAR_CAROUSEL_MS);
+    return () => window.clearInterval(timer);
+  }, [popularCarouselApi, isPopularCarouselPaused, popularProducts.length]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -133,11 +199,11 @@ export function Home() {
       try {
         const response = await fetch(`${apiBaseUrl}/community/posts`, { signal: controller.signal });
         const data = await response.json();
-        if (!response.ok) throw new Error(data?.error || "산골이야기 목록 조회 실패");
+        if (!response.ok) throw new Error(data?.error || "산골소통방 목록 조회 실패");
 
         const rows = Array.isArray(data) ? (data as CommunityPostApiRow[]) : [];
         const next = rows.slice(0, 4).map((p) => ({
-          title: p.title,
+          title: getCommunityPostListTitle(p),
           date: formatDateYMD(p.created_at),
           link: "/community/story",
         }));
@@ -153,6 +219,41 @@ export function Home() {
     return () => controller.abort();
   }, [apiBaseUrl]);
 
+  useEffect(() => {
+    const controller = new AbortController();
+
+    const loadPopularProducts = async () => {
+      try {
+        const headers: HeadersInit = {};
+        if (token) headers.Authorization = `Bearer ${token}`;
+        const response = await fetch(`${apiBaseUrl}/products`, { signal: controller.signal, headers });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data?.error || "상품 목록 조회 실패");
+        const rows = Array.isArray(data) ? (data as ProductApiRow[]) : [];
+        const eligible = rows
+          .filter((row) => row && row.name && row.category && row.is_active !== false)
+          .filter((row) => isFranchiseUser || String(row.category || "").trim() !== "재공품");
+        const top = pickDiversePopularProducts(eligible, POPULAR_PRODUCT_LIMIT).map((row) => ({
+          id: row.id,
+          name: row.name,
+          category: row.category,
+          img: row.image_url || "",
+          link: buildProductCatalogHref(
+            { id: row.id, category: row.category },
+            { isFranchiseUser }
+          ),
+          price: parseProductPrice(row.price),
+        }));
+        setPopularProducts(top.length > 0 ? top : DEFAULT_PRODUCTS);
+      } catch (_error) {
+        setPopularProducts(DEFAULT_PRODUCTS);
+      }
+    };
+
+    void loadPopularProducts();
+    return () => controller.abort();
+  }, [apiBaseUrl, isFranchiseUser, token]);
+
   // 홈 상단 미니 공지사항
   useEffect(() => {
     const controller = new AbortController();
@@ -165,7 +266,7 @@ export function Home() {
         if (!response.ok) throw new Error(data?.error || "공지사항 목록 조회 실패");
 
         const rows = Array.isArray(data) ? (data as NoticeRow[]) : [];
-        setNotices(rows.slice(0, 2));
+        setNotices(rows.slice(0, 4));
       } catch (_error) {
         setNotices([]);
       } finally {
@@ -181,29 +282,82 @@ export function Home() {
     <div className="flex-1 flex flex-col">
       {/* Hero Section */}
       <section className="relative h-[620px] md:h-[720px] w-full overflow-hidden flex items-center justify-center text-center group">
-        {heroImages.map((img, index) => (
-          <div 
-            key={index}
-            className={`absolute inset-0 bg-cover bg-center transition-opacity duration-1000 ${index === currentSlide ? 'opacity-100' : 'opacity-0 z-0'}`}
-            style={{ backgroundImage: `url('${img}')` }}
-          />
-        ))}
-        <div className="absolute inset-0 bg-gradient-to-r from-black/78 via-black/58 to-black/38 z-10" />
-        <div className="absolute inset-0 bg-black/15 z-10" />
-        
-        <div className="relative z-20 text-white px-6 max-w-5xl mx-auto w-full flex flex-col items-center">
-          <p className="text-base md:text-xl font-medium text-[#E8DFCA] mb-5 tracking-wide [text-shadow:0_2px_10px_rgba(0,0,0,0.45)]">
+        <AnimatePresence mode="sync" initial={false}>
+          <motion.div
+            key={currentSlide}
+            className="absolute inset-0 z-0"
+            initial={reduceMotion ? { opacity: 0 } : { opacity: 0, x: 40 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={reduceMotion ? { opacity: 0 } : { opacity: 0, x: -40 }}
+            transition={{ duration: reduceMotion ? 0.2 : 0.85, ease: [0.22, 1, 0.36, 1] }}
+          >
+            <img
+              src={heroImages[currentSlide]}
+              alt=""
+              className={cn(
+                "absolute inset-0 h-full w-full object-cover hero-image-tone",
+                !reduceMotion && (currentSlide % 2 === 0 ? "hero-ken-burns-a" : "hero-ken-burns-b")
+              )}
+              fetchPriority={currentSlide === 0 ? "high" : "auto"}
+              decoding="async"
+            />
+          </motion.div>
+        </AnimatePresence>
+        <motion.div className="absolute inset-0 bg-gradient-to-r from-black/78 via-black/58 to-black/38 z-10" aria-hidden />
+        <motion.div className="absolute inset-0 bg-black/15 z-10" aria-hidden />
+
+        <motion.div
+          key={`hero-copy-${currentSlide}`}
+          className="relative z-20 text-white site-container w-full flex flex-col items-center"
+          initial="hidden"
+          animate="visible"
+          variants={{
+            hidden: {},
+            visible: {
+              transition: { staggerChildren: reduceMotion ? 0 : 0.12, delayChildren: reduceMotion ? 0 : 0.08 },
+            },
+          }}
+        >
+          <motion.p
+            variants={{ hidden: { opacity: 0, y: 18 }, visible: { opacity: 1, y: 0 } }}
+            transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+            className="text-base md:text-xl font-medium text-[#E8DFCA] mb-5 tracking-wide [text-shadow:0_2px_10px_rgba(0,0,0,0.45)]"
+          >
             {heroSection.subtitle || "강원도 화천 청정 두메산골에서 자란 명품 임산물과 고냉지 농산물"}
-          </p>
-          <h1 className="text-4xl md:text-5xl lg:text-6xl font-extrabold mb-8 leading-[1.25] text-white tracking-tight [text-shadow:0_3px_18px_rgba(0,0,0,0.55)]">
-            {(heroSection.title || "자연의 가치를 지키고\n소비자의 삶에 건강과\n행복을 더하는 것을\n목표로 하고 있습니다.").split("\n").map((line, idx) => (
-              <span key={idx}>
-                {line}
-                <br />
-              </span>
-            ))}
-          </h1>
-          <div className="flex flex-wrap items-center justify-center gap-3">
+          </motion.p>
+          <motion.h1
+            variants={{ hidden: { opacity: 0, y: 22 }, visible: { opacity: 1, y: 0 } }}
+            transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
+            className="text-4xl md:text-5xl lg:text-6xl font-extrabold mb-8 leading-[1.25] text-white tracking-tight [text-shadow:0_3px_18px_rgba(0,0,0,0.55)]"
+          >
+            {((heroSection.title && heroSection.title.trim() && heroSection.title !== LEGACY_HERO_TITLE)
+              ? heroSection.title
+              : UPDATED_HERO_TITLE
+            )
+              .split("\n")
+              .map((line, idx) => (
+                <span key={idx}>
+                  {line}
+                  <br />
+                </span>
+              ))}
+          </motion.h1>
+          {heroSection.subtitle2 ? (
+            <motion.p
+              variants={{ hidden: { opacity: 0, y: 16 }, visible: { opacity: 1, y: 0 } }}
+              transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+              className="text-sm md:text-lg font-medium text-white/90 mb-8 tracking-wide [text-shadow:0_2px_10px_rgba(0,0,0,0.45)]"
+            >
+              {heroSection.subtitle2}
+            </motion.p>
+          ) : (
+            <motion.div variants={{ hidden: { opacity: 0 }, visible: { opacity: 1 } }} className="mb-8" />
+          )}
+          <motion.div
+            variants={{ hidden: { opacity: 0, y: 16 }, visible: { opacity: 1, y: 0 } }}
+            transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+            className="flex flex-wrap items-center justify-center gap-3"
+          >
             {heroActions.map((action, index) => {
               const isPrimaryAction =
                 (action.label || "").includes("주문") || action.variant === "primary" || index === 1;
@@ -222,28 +376,41 @@ export function Home() {
                 </Link>
               );
             })}
-          </div>
-          
-          <div className="flex gap-3 mt-12">
-            {heroImages.map((_, i) => (
-              <button 
-                key={i}
-                onClick={() => setCurrentSlide(i)}
-                className={`w-12 h-1.5 rounded-full transition-all duration-300 ${i === currentSlide ? 'bg-white' : 'bg-white/30 hover:bg-white/60'}`}
-                aria-label={`Go to slide ${i + 1}`}
-              />
-            ))}
-          </div>
-        </div>
+          </motion.div>
+
+          <motion.div
+            variants={{ hidden: { opacity: 0 }, visible: { opacity: 1 } }}
+            className="flex justify-center gap-3 mt-12"
+          >
+              {heroImages.map((_, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => setCurrentSlide(i)}
+                  className={cn(
+                    "h-1.5 rounded-full transition-all duration-300",
+                    i === currentSlide ? "w-12 bg-white" : "w-8 bg-white/30 hover:bg-white/60"
+                  )}
+                  aria-label={`${i + 1}번째 슬라이드`}
+                  aria-current={i === currentSlide}
+                />
+              ))}
+          </motion.div>
+        </motion.div>
       </section>
 
       <section className="py-10 bg-gradient-to-b from-[#F5F7F1] to-white border-b border-[#E8EDE2]">
-        <div className="max-w-7xl mx-auto px-6 grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="site-container grid grid-cols-2 lg:grid-cols-4 gap-4">
           {[Shield, Award, Truck, CheckCircle2].map((Icon, index) => {
             const badge = trustBadges[index] || DEFAULT_TRUST_BADGES[index];
+            const iconUrl = badge.iconUrl || DEFAULT_TRUST_BADGES[index]?.iconUrl || "";
             return (
               <div key={`${badge.title}-${index}`} className="rounded-2xl border border-[#E1E8D9] bg-white px-4 py-4 flex items-center gap-3">
-                <Icon className="w-5 h-5 text-[#1A4D2E]" />
+                {iconUrl ? (
+                  <img src={iconUrl} alt={`${badge.title} 아이콘`} className="w-5 h-5 object-contain" />
+                ) : (
+                  <Icon className="w-5 h-5 text-[#1A4D2E]" />
+                )}
                 <div>
                   <p className="text-sm font-semibold text-[#1A4D2E]">{badge.title}</p>
                   <p className="text-xs text-[#6D7568]">{badge.desc}</p>
@@ -256,9 +423,19 @@ export function Home() {
 
       {/* About CEO / Philosophy Section (New Addition based on Analysis) */}
       <section className="py-20 bg-[#FAFAF7]">
-        <div className="max-w-4xl mx-auto px-6 text-center">
-          <Leaf className="w-12 h-12 text-[#1A4D2E] mx-auto mb-6" />
-          <h2 className="text-3xl font-extrabold text-[#1A4D2E] mb-6">"신뢰를 바탕으로 건강한 먹거리를 공급합니다"</h2>
+        <div className="site-container site-container--narrow text-center">
+          {introSection.iconUrl ? (
+            <img
+              src={introSection.iconUrl}
+              alt="브랜드 스토리 아이콘"
+              className="w-12 h-12 object-contain mx-auto mb-6"
+            />
+          ) : (
+            <Leaf className="w-12 h-12 text-[#1A4D2E] mx-auto mb-6" />
+          )}
+          <h2 className="text-3xl font-extrabold text-[#1A4D2E] mb-6">
+            {introSection.title || '"신뢰를 바탕으로 건강한 먹거리를 공급합니다"'}
+          </h2>
           <p className="text-[#4F6F52] text-lg leading-relaxed mb-4">
             {(introSection.description1 || "금융권 경력을 뒤로하고 고향으로 돌아와 설립한 농업법인 (주)산골은\n강원도 화천의 맑은 자연이 주는 선물에 정성을 더해 명품 임산물을 키워냅니다.").split("\n").map((line, idx) => (
               <span key={idx}>
@@ -280,13 +457,21 @@ export function Home() {
 
       {/* Body Section 1: 기업 핵심 가치 (Feature Cards) */}
       <section className="py-24 bg-white relative">
-        <div className="max-w-7xl mx-auto px-6">
+        <div className="site-container">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {features.map((feature, idx) => (
-              <div key={`${feature.title}-${idx}`} className="group flex flex-col h-full rounded-2xl overflow-hidden border border-gray-100 shadow-sm hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 bg-white">
+              <motion.div
+                key={`${feature.title}-${idx}`}
+                className="group flex flex-col h-full rounded-2xl overflow-hidden border border-gray-100 shadow-sm hover:shadow-xl transition-shadow duration-300 bg-white"
+                initial={reduceMotion ? false : { opacity: 0, y: 36 }}
+                whileInView={reduceMotion ? undefined : { opacity: 1, y: 0 }}
+                viewport={{ once: true, amount: 0.25 }}
+                transition={{ duration: 0.55, delay: reduceMotion ? 0 : idx * 0.08, ease: [0.22, 1, 0.36, 1] }}
+                whileHover={reduceMotion ? undefined : { y: -6 }}
+              >
                 <div className="h-48 overflow-hidden relative">
                   <div className="absolute inset-0 bg-black/20 group-hover:bg-transparent transition-colors z-10" />
-                  <img src={feature.img} alt={feature.title} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
+                  <img src={feature.img} alt={feature.title} className="w-full h-full object-cover hero-image-tone group-hover:scale-110 group-hover:saturate-[1.15] transition-all duration-700" />
                 </div>
                 <div className="p-8 flex flex-col flex-grow">
                   <h3 className="text-2xl font-bold text-[#1A4D2E] mb-4 group-hover:text-[#4F6F52] transition-colors">{feature.title}</h3>
@@ -297,7 +482,7 @@ export function Home() {
                     자세히 보기 <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                   </Link>
                 </div>
-              </div>
+              </motion.div>
             ))}
           </div>
         </div>
@@ -305,7 +490,7 @@ export function Home() {
 
       {/* Body Section 2: 주요 상품 라인업 (Product Cards) */}
       <section className="py-24 bg-[#FAFAF7]">
-        <div className="max-w-7xl mx-auto px-6">
+        <div className="site-container">
           <div className="flex flex-col md:flex-row justify-between items-end mb-12 border-b border-[#E8DFCA] pb-6">
             <div>
               <p className="text-sm font-semibold text-[#4F6F52] mb-2">BEST SELLER</p>
@@ -317,31 +502,66 @@ export function Home() {
             </Link>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-            {featuredCards.map((product, idx) => (
-              <Link to={product.link || "/products/forest"} key={`${product.name}-${idx}`} className="group cursor-pointer block">
-                <div className="relative aspect-[4/5] rounded-2xl overflow-hidden mb-4 shadow-sm border border-[#E2E8D9] bg-gray-100 group-hover:shadow-lg transition-shadow">
-                  <img 
-                    src={product.img} 
-                    alt={product.name}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-6">
-                    <span className="text-white/80 text-xs font-bold mb-2">{product.category}</span>
-                    <span className="text-white font-medium border border-white/50 px-4 py-1.5 rounded-full text-sm backdrop-blur-sm w-fit">
-                      자세히 보기
-                    </span>
-                  </div>
-                </div>
-                <div className="text-center">
-                  <span className="text-xs font-bold text-[#4F6F52] mb-1 block">{product.category}</span>
-                  <h3 className="text-xl font-bold text-[#1A4D2E] group-hover:text-[#4F6F52] transition-colors">{product.name}</h3>
-                  <p className="text-sm font-semibold text-[#1A4D2E] mt-1">신선 당일 선별</p>
-                </div>
-              </Link>
-            ))}
+          <div
+            className="relative px-10 md:px-12"
+            onMouseEnter={() => setIsPopularCarouselPaused(true)}
+            onMouseLeave={() => setIsPopularCarouselPaused(false)}
+            onFocusCapture={() => setIsPopularCarouselPaused(true)}
+            onBlurCapture={() => setIsPopularCarouselPaused(false)}
+          >
+            <Carousel
+              setApi={setPopularCarouselApi}
+              opts={{ align: "start", loop: true, dragFree: false }}
+              className="w-full"
+            >
+              <CarouselContent>
+                {popularProducts.map((product, idx) => (
+                  <CarouselItem
+                    key={product.id ?? `${product.name}-${idx}`}
+                    className={POPULAR_CARD_CLASS}
+                  >
+                    <Link
+                      to={
+                        product.id
+                          ? buildProductCatalogHref(
+                              { id: product.id, category: product.category },
+                              { isFranchiseUser }
+                            )
+                          : product.link || "/products/forest"
+                      }
+                      className="group cursor-pointer block"
+                    >
+                      <div className="relative aspect-[4/5] rounded-2xl overflow-hidden mb-4 shadow-sm border border-[#E2E8D9] bg-gray-100 group-hover:shadow-lg transition-shadow">
+                        <img
+                          src={product.img}
+                          alt={product.name}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-6">
+                          <span className="text-white/80 text-xs font-bold mb-2">{product.category}</span>
+                          <span className="text-white font-medium border border-white/50 px-4 py-1.5 rounded-full text-sm backdrop-blur-sm w-fit">
+                            자세히 보기
+                          </span>
+                        </div>
+                      </div>
+                      <div className="text-center px-1">
+                        <span className="text-xs font-bold text-[#4F6F52] mb-1 block">{product.category}</span>
+                        <h3 className="text-xl font-bold text-[#1A4D2E] group-hover:text-[#4F6F52] transition-colors line-clamp-2">
+                          {product.name}
+                        </h3>
+                        <p className="text-lg font-black text-[#1A4D2E] mt-2 tabular-nums">
+                          {formatProductPriceLabel(product.price)}
+                        </p>
+                      </div>
+                    </Link>
+                  </CarouselItem>
+                ))}
+              </CarouselContent>
+              <CarouselPrevious className="left-0 md:left-1 top-[38%] size-10 bg-white/95 border-[#D8E1D1] text-[#1A4D2E] hover:bg-white shadow-md" />
+              <CarouselNext className="right-0 md:right-1 top-[38%] size-10 bg-white/95 border-[#D8E1D1] text-[#1A4D2E] hover:bg-white shadow-md" />
+            </Carousel>
           </div>
-          
+
           <Link to="/products/forest" className="md:hidden mt-10 w-full flex justify-center items-center gap-2 text-white bg-[#1A4D2E] hover:bg-[#2d5016] font-bold px-6 py-4 rounded-xl transition-colors">
             상품 더 보기 <ChevronRight className="w-5 h-5" />
           </Link>
@@ -350,7 +570,7 @@ export function Home() {
 
       {/* Body Section 3: 고객 지원 및 소통 (Board / Contact) */}
       <section className="py-24 bg-white">
-        <div className="max-w-7xl mx-auto px-6">
+        <div className="site-container">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
 
             {/* Left column: Notice + Board */}
@@ -402,12 +622,10 @@ export function Home() {
                 </ul>
               </div>
 
-              {/* Board */}
+              {/* Board — 공지사항과 동일 리스트 UI */}
               <div className="bg-[#FAFAF7] rounded-3xl p-7 md:p-8 border border-gray-100">
-                <div className="flex justify-between items-center mb-6">
-                  <h3 className="text-2xl font-bold text-[#1A4D2E] flex items-center gap-3">
-                    <Volume2 className="w-6 h-6 text-[#4F6F52]" /> 산골이야기
-                  </h3>
+                <div className="flex justify-between items-center mb-5">
+                  <h3 className="text-2xl font-bold text-[#1A4D2E]">산골소통방</h3>
                   <Link
                     to="/community/story"
                     className="text-gray-500 hover:text-[#1A4D2E] text-sm font-medium"
@@ -415,22 +633,33 @@ export function Home() {
                     더보기 +
                   </Link>
                 </div>
-                <ul className="space-y-4">
+                <div className="h-px bg-[#1A4D2E]/20 mb-4" />
+                <ul className="space-y-3">
                   {communityLoading
                     ? null
                     : communityPosts.map((post, idx) => (
-                        <li key={`${post.title}-${idx}`}>
-                          <Link
-                            to={post.link}
-                            className="group flex justify-between items-center py-4 border-b border-gray-200 last:border-0 hover:border-[#1A4D2E] transition-colors cursor-pointer"
-                          >
-                            <span className="text-gray-700 font-medium group-hover:text-[#1A4D2E] truncate pr-4">
-                              {post.title}
+                        <li key={`${post.title}-${idx}`} className="flex items-center gap-4">
+                          <div className="flex-shrink-0 w-16">
+                            <span className="bg-gray-100 text-gray-600 text-xs font-semibold px-3 py-1.5 rounded-full block text-center">
+                              소통
                             </span>
-                            <span className="text-sm text-gray-400 shrink-0">{post.date}</span>
-                          </Link>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <Link
+                              to={post.link}
+                              className="block text-[15px] font-medium text-gray-700 hover:text-[#1A4D2E] transition-colors truncate"
+                            >
+                              {post.title}
+                            </Link>
+                          </div>
+                          <div className="text-sm text-gray-400 font-medium shrink-0">
+                            {post.date}
+                          </div>
                         </li>
                       ))}
+                  {!communityLoading && communityPosts.length === 0 ? (
+                    <li className="text-sm text-gray-500 py-6">게시글이 없습니다.</li>
+                  ) : null}
                 </ul>
               </div>
             </div>

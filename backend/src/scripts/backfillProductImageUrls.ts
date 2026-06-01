@@ -3,7 +3,7 @@ import pool from "../config/database";
 
 dotenv.config();
 
-type CategorySlug = "forest" | "agriculture" | "manufactured";
+type CategorySlug = "forest" | "agriculture" | "manufactured" | "wip";
 
 const extractFirstImgSrc = (html: unknown): string | null => {
   if (typeof html !== "string" || !html) return null;
@@ -29,11 +29,13 @@ const getCategorySlug = (product: { category: string | null; product_code: strin
   if (normalizedCategory === "임산물") return "forest";
   if (normalizedCategory === "농산물") return "agriculture";
   if (normalizedCategory === "제품(가공식품)") return "manufactured";
+  if (normalizedCategory === "재공품") return "wip";
 
-  const code = String(product.product_code || "");
-  if (code.startsWith("SG-IM-")) return "forest";
-  if (code.startsWith("SG-AG-")) return "agriculture";
-  if (code.startsWith("SG-PR-")) return "manufactured";
+  const code = String(product.product_code || "").toUpperCase();
+  if (/^FP_/.test(code) || code.startsWith("SG-IM-")) return "forest";
+  if (/^AG_/.test(code) || code.startsWith("SG-AG-")) return "agriculture";
+  if (/^PR_/.test(code) || code.startsWith("SG-PR-")) return "manufactured";
+  if (/^WIP_/.test(code) || code.startsWith("SG-WIP-")) return "wip";
 
   if (["임산물", "산양삼", "산더덕", "산두룹", "공지"].includes(normalizedCategory)) return "forest";
   if (["농산물", "고추", "마늘", "양파", "토마토"].includes(normalizedCategory)) return "agriculture";
@@ -60,6 +62,7 @@ const main = async (): Promise<void> => {
     forest: process.env.FALLBACK_IMAGE_FOREST || "",
     agriculture: process.env.FALLBACK_IMAGE_AGRICULTURE || "",
     manufactured: process.env.FALLBACK_IMAGE_MANUFACTURED || "",
+    wip: process.env.FALLBACK_IMAGE_WIP || process.env.FALLBACK_IMAGE_MANUFACTURED || "",
   };
 
   const limit = process.env.LIMIT ? Number(process.env.LIMIT) : null;

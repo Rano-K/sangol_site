@@ -36,8 +36,9 @@ logs/
 *.tar
 *.tar.gz
 
-# backend runtime uploads
+# backend runtime uploads (seed originals live in backend/seed/cms-assets/)
 backend/uploads/
+!backend/seed/
 
 # temp
 .tmp/

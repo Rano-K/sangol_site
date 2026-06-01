@@ -67,7 +67,7 @@ export function BusinessVision() {
       </div>
       <SectionQuickLinks items={BUSINESS_QUICK_LINKS} />
 
-      <div className="max-w-7xl mx-auto px-6 py-20 md:py-32 w-full flex flex-col gap-24">
+      <div className="site-container py-20 md:py-32 w-full flex flex-col gap-24">
         
         {/* Intro Text */}
         <div className="text-center max-w-3xl mx-auto">

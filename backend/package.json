@@ -10,7 +10,10 @@
     "start": "node dist/server.js",
     "migrate": "tsx src/database/migrations/run.ts",
     "seed:dev-admin": "tsx src/scripts/seedDevAdmin.ts",
+    "seed:cms-content": "tsx src/scripts/seedCmsContent.ts",
+    "seed:init": "tsx src/scripts/bootstrapCmsAssetsFromSeed.ts && tsx src/scripts/seedCmsContent.ts",
     "fix:cms-media-names": "tsx src/scripts/fixCmsMediaOriginalNames.ts",
+    "fix:cms-media-urls": "tsx src/scripts/fixCmsMediaUrls.ts",
     "docker:postgres:up": "bash scripts/docker-postgres.sh up -d",
     "docker:postgres:down": "bash scripts/docker-postgres.sh down",
     "docker:postgres:reset": "bash scripts/docker-postgres.sh down -v && bash scripts/docker-postgres.sh up -d"

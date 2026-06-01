@@ -1,9 +1,40 @@
 import React, { FormEvent, useEffect, useState } from "react";
 import { Outlet, Link, useNavigate } from "react-router";
-import { ChevronDown, Heart, Menu, Phone, Search, ShoppingCart, User } from "lucide-react";
+import { Menu, Phone, Search, User } from "lucide-react";
 import { getCmsMediaFileUrl, useCmsPage } from "../hooks/useCmsPage";
-import { useShopping } from "../hooks/useShopping";
+import { CMS_IMAGE_FALLBACK } from "../lib/cmsImageFallback";
 import { useAuth } from "../hooks/useAuth";
+import { GnbMenus } from "./GnbMenus";
+
+const KOREAN_UNICODE_RANGE = "U+1100-11FF, U+3130-318F, U+AC00-D7AF";
+const LATIN_UNICODE_RANGE = "U+0000-00FF, U+0100-024F";
+const DEFAULT_FONT_STACK = "'Noto Sans KR', 'Malgun Gothic', sans-serif";
+
+function resolveGlobalTypography(typography: Record<string, unknown>) {
+  const mediaId = Number(typography.fontMediaId ?? typography.bodyFontMediaId ?? typography.headingFontMediaId ?? 0);
+  const mediaIdEn = Number(
+    typography.fontMediaIdEn ?? typography.bodyFontMediaIdEn ?? typography.headingFontMediaIdEn ?? 0
+  );
+  const familyNameRaw = String(
+    typography.fontFamilyName ?? typography.bodyFontFamilyName ?? typography.headingFontFamilyName ?? ""
+  ).trim();
+  const familyNameEnRaw = String(
+    typography.fontFamilyNameEn ??
+      typography.bodyFontFamilyNameEn ??
+      typography.headingFontFamilyNameEn ??
+      ""
+  ).trim();
+
+  const familyName =
+    familyNameRaw || (Number.isFinite(mediaId) && mediaId > 0 ? `SangolGlobal${mediaId}` : "");
+  const familyNameEn =
+    familyNameEnRaw ||
+    (Number.isFinite(mediaIdEn) && mediaIdEn > 0 ? `SangolGlobalEn${mediaIdEn}` : familyName);
+  const fontUrl = getCmsMediaFileUrl(Number.isFinite(mediaId) && mediaId > 0 ? mediaId : null);
+  const fontUrlEn = getCmsMediaFileUrl(Number.isFinite(mediaIdEn) && mediaIdEn > 0 ? mediaIdEn : null);
+
+  return { familyName, familyNameEn, fontUrl, fontUrlEn };
+}
 
 export function Layout() {
   const navigate = useNavigate();
@@ -12,10 +43,15 @@ export function Layout() {
   const topMenu = (sections.topMenu ?? {}) as Record<string, string>;
   const footer = (sections.footer ?? {}) as Record<string, string>;
   const logo = (sections.logo ?? {}) as Record<string, string>;
-  const headerLogo = getCmsMediaFileUrl(logo.headerLogoMediaId ? Number(logo.headerLogoMediaId) : null) || "";
-  const footerLogo = getCmsMediaFileUrl(logo.footerLogoMediaId ? Number(logo.footerLogoMediaId) : null) || "";
-  const topNotice = topMenu.noticeText || "신규가맹점 첫 구매 10% 할인";
-  const { wishlistCount, cartCount } = useShopping();
+  const headerLogoMediaId = Number(logo.headerLogoMediaId);
+  const footerLogoMediaId = Number(logo.footerLogoMediaId);
+  const headerLogo =
+    getCmsMediaFileUrl(Number.isFinite(headerLogoMediaId) && headerLogoMediaId > 0 ? headerLogoMediaId : null) ||
+    CMS_IMAGE_FALLBACK;
+  const footerLogo =
+    getCmsMediaFileUrl(Number.isFinite(footerLogoMediaId) && footerLogoMediaId > 0 ? footerLogoMediaId : null) ||
+    CMS_IMAGE_FALLBACK;
+  const topNotice = String(topMenu.noticeText ?? "").trim();
   const { user, isAuthenticated, logout } = useAuth();
   const isFranchiseUser = user?.role === "franchise";
   const [searchKeyword, setSearchKeyword] = useState("");
@@ -24,109 +60,50 @@ export function Layout() {
   useEffect(() => {
     const typography = (sections.typography ?? {}) as Record<string, unknown>;
     const enabled = typography.enabled !== false;
-    const baseFallback = "'Noto Sans KR', 'Malgun Gothic', sans-serif";
-
-    const bodyFontFamilyNameRaw = String(typography.bodyFontFamilyName ?? typography.fontFamilyName ?? "").trim();
-    const bodyFontFamilyNameEnRaw = String(typography.bodyFontFamilyNameEn ?? typography.fontFamilyNameEn ?? "").trim();
-    const headingFontFamilyNameRaw = String(typography.headingFontFamilyName ?? "").trim();
-    const headingFontFamilyNameEnRaw = String(typography.headingFontFamilyNameEn ?? "").trim();
-    const bodyFallback = baseFallback;
-    const headingFallback = bodyFallback;
-
-    const bodyMediaId = Number(typography.bodyFontMediaId ?? typography.fontMediaId ?? 0);
-    const bodyMediaIdEn = Number(typography.bodyFontMediaIdEn ?? typography.fontMediaIdEn ?? 0);
-    const headingMediaId = Number(typography.headingFontMediaId ?? 0);
-    const headingMediaIdEn = Number(typography.headingFontMediaIdEn ?? 0);
-    const bodyFontFamilyName =
-      bodyFontFamilyNameRaw || (Number.isFinite(bodyMediaId) && bodyMediaId > 0 ? `SangolAutoBody${bodyMediaId}` : "");
-    const bodyFontFamilyNameEn =
-      bodyFontFamilyNameEnRaw || (Number.isFinite(bodyMediaIdEn) && bodyMediaIdEn > 0 ? `SangolAutoBodyEn${bodyMediaIdEn}` : bodyFontFamilyName);
-    const headingFontFamilyName =
-      headingFontFamilyNameRaw || (Number.isFinite(headingMediaId) && headingMediaId > 0 ? `SangolAutoHeading${headingMediaId}` : "");
-    const headingFontFamilyNameEn =
-      headingFontFamilyNameEnRaw || (Number.isFinite(headingMediaIdEn) && headingMediaIdEn > 0 ? `SangolAutoHeadingEn${headingMediaIdEn}` : headingFontFamilyName);
-    const bodyFontUrl = getCmsMediaFileUrl(Number.isFinite(bodyMediaId) && bodyMediaId > 0 ? bodyMediaId : null);
-    const bodyFontUrlEn = getCmsMediaFileUrl(Number.isFinite(bodyMediaIdEn) && bodyMediaIdEn > 0 ? bodyMediaIdEn : null);
-    const headingFontUrl = getCmsMediaFileUrl(Number.isFinite(headingMediaId) && headingMediaId > 0 ? headingMediaId : null);
-    const headingFontUrlEn = getCmsMediaFileUrl(Number.isFinite(headingMediaIdEn) && headingMediaIdEn > 0 ? headingMediaIdEn : null);
-
-    const koreanRange = "U+1100-11FF, U+3130-318F, U+AC00-D7AF";
-    const latinRange = "U+0000-00FF, U+0100-024F";
+    const { familyName, familyNameEn, fontUrl, fontUrlEn } = resolveGlobalTypography(typography);
 
     const styleId = "cms-global-font-face";
     const prev = document.getElementById(styleId);
     if (prev?.parentNode) prev.parentNode.removeChild(prev);
 
-    const defaultFamily = "'Noto Sans KR', 'Malgun Gothic', sans-serif";
-    const bodyFamilyValue = enabled
-      ? (bodyFontFamilyName ? `'${bodyFontFamilyName}', ${bodyFallback}` : bodyFallback)
-      : defaultFamily;
-    const headingFamilyValue = enabled
-      ? (headingFontFamilyName ? `'${headingFontFamilyName}', ${headingFallback}` : bodyFamilyValue)
-      : defaultFamily;
+    const globalFamilyValue = enabled
+      ? familyName
+        ? `'${familyName}', ${DEFAULT_FONT_STACK}`
+        : DEFAULT_FONT_STACK
+      : DEFAULT_FONT_STACK;
 
-    document.documentElement.style.setProperty("--cms-front-font-family", bodyFamilyValue);
-    document.documentElement.style.setProperty("--cms-front-font-body-family", bodyFamilyValue);
-    document.documentElement.style.setProperty("--cms-front-font-heading-family", headingFamilyValue);
+    document.documentElement.style.setProperty("--cms-front-font-family", globalFamilyValue);
+    document.documentElement.style.setProperty("--cms-front-font-body-family", globalFamilyValue);
+    document.documentElement.style.setProperty("--cms-front-font-heading-family", globalFamilyValue);
 
     const blocks: string[] = [];
-    if (enabled && bodyFontFamilyName && bodyFontUrl) {
+    if (enabled && familyName && fontUrl) {
       blocks.push(`
         @font-face {
-          font-family: '${bodyFontFamilyName}';
-          src: url('${bodyFontUrl}') format('woff2'),
-               url('${bodyFontUrl}') format('woff'),
-               url('${bodyFontUrl}') format('truetype'),
-               url('${bodyFontUrl}') format('opentype');
+          font-family: '${familyName}';
+          src: url('${fontUrl}') format('woff2'),
+               url('${fontUrl}') format('woff'),
+               url('${fontUrl}') format('truetype'),
+               url('${fontUrl}') format('opentype');
           font-weight: normal;
           font-style: normal;
           font-display: swap;
-          unicode-range: ${koreanRange};
+          unicode-range: ${KOREAN_UNICODE_RANGE};
         }
       `);
     }
-    if (enabled && bodyFontFamilyNameEn && bodyFontUrlEn) {
+    if (enabled && familyNameEn && fontUrlEn) {
       blocks.push(`
         @font-face {
-          font-family: '${bodyFontFamilyName}';
-          src: url('${bodyFontUrlEn}') format('woff2'),
-               url('${bodyFontUrlEn}') format('woff'),
-               url('${bodyFontUrlEn}') format('truetype'),
-               url('${bodyFontUrlEn}') format('opentype');
+          font-family: '${familyName}';
+          src: url('${fontUrlEn}') format('woff2'),
+               url('${fontUrlEn}') format('woff'),
+               url('${fontUrlEn}') format('truetype'),
+               url('${fontUrlEn}') format('opentype');
           font-weight: normal;
           font-style: normal;
           font-display: swap;
-          unicode-range: ${latinRange};
-        }
-      `);
-    }
-    if (enabled && headingFontFamilyName && headingFontUrl) {
-      blocks.push(`
-        @font-face {
-          font-family: '${headingFontFamilyName}';
-          src: url('${headingFontUrl}') format('woff2'),
-               url('${headingFontUrl}') format('woff'),
-               url('${headingFontUrl}') format('truetype'),
-               url('${headingFontUrl}') format('opentype');
-          font-weight: normal;
-          font-style: normal;
-          font-display: swap;
-          unicode-range: ${koreanRange};
-        }
-      `);
-    }
-    if (enabled && headingFontFamilyNameEn && headingFontUrlEn) {
-      blocks.push(`
-        @font-face {
-          font-family: '${headingFontFamilyName}';
-          src: url('${headingFontUrlEn}') format('woff2'),
-               url('${headingFontUrlEn}') format('woff'),
-               url('${headingFontUrlEn}') format('truetype'),
-               url('${headingFontUrlEn}') format('opentype');
-          font-weight: normal;
-          font-style: normal;
-          font-display: swap;
-          unicode-range: ${latinRange};
+          unicode-range: ${LATIN_UNICODE_RANGE};
         }
       `);
     }
@@ -142,14 +119,6 @@ export function Layout() {
       if (current?.parentNode) current.parentNode.removeChild(current);
     };
   }, [sections.typography]);
-
-  const goToShoppingSection = (tab: "cart" | "wishlist") => {
-    if (!isAuthenticated) {
-      navigate("/login", { state: { from: "/mypage" } });
-      return;
-    }
-    navigate(`/mypage?tab=${tab}`);
-  };
 
   const submitSearch = (event: FormEvent) => {
     event.preventDefault();
@@ -171,7 +140,11 @@ export function Layout() {
             <Phone className="w-3.5 h-3.5" />
             <span>{footer.csPhone ? `고객센터 ${footer.csPhone}` : "고객센터"}</span>
           </div>
-          <p className="text-center font-medium text-[#F7F3E7]">{topNotice}</p>
+          {topNotice ? (
+            <p className="text-center font-medium text-[#F7F3E7]">{topNotice}</p>
+          ) : (
+            <div className="hidden md:block" aria-hidden />
+          )}
           <div className="flex justify-center md:justify-end items-center gap-3 sm:gap-4">
             {isAuthenticated ? (
               <>
@@ -201,7 +174,7 @@ export function Layout() {
       </div>
 
       {/* Main GNB */}
-      <header className="bg-white border-b border-[#E8DFCA] sticky top-0 z-40 shadow-sm">
+      <header className="bg-white border-b border-[#E8DFCA] sticky top-0 z-40 shadow-sm overflow-visible">
         <div className="max-w-7xl mx-auto px-4 md:px-6 h-24 flex items-center gap-3 md:gap-5">
           <Link to="/" className="flex items-center gap-2 text-[#1A4D2E]">
             <img src={headerLogo} alt="SANGOL 로고" className="h-10 w-auto object-contain" />
@@ -235,32 +208,6 @@ export function Layout() {
             >
               <Search className="w-4 h-4" />
             </button>
-            {!isFranchiseUser ? (
-              <>
-                <button
-                  type="button"
-                  onClick={() => goToShoppingSection("wishlist")}
-                  className="relative p-2 rounded-full hover:bg-[#F4F6EF] transition-colors"
-                  aria-label="찜 목록"
-                >
-                  <Heart className="w-4 h-4" />
-                  <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 rounded-full bg-red-500 text-white text-[10px] leading-4 text-center">
-                    {wishlistCount}
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => goToShoppingSection("cart")}
-                  className="relative p-2 rounded-full hover:bg-[#F4F6EF] transition-colors"
-                  aria-label="장바구니"
-                >
-                  <ShoppingCart className="w-4 h-4" />
-                  <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 rounded-full bg-[#1A4D2E] text-white text-[10px] leading-4 text-center">
-                    {cartCount}
-                  </span>
-                </button>
-              </>
-            ) : null}
             <button
               type="button"
               onClick={() => navigate("/mypage")}
@@ -298,82 +245,16 @@ export function Layout() {
           </div>
         ) : null}
 
-        <div className="max-w-7xl mx-auto px-6 flex justify-end">
-          <nav className="hidden lg:flex gap-8 text-[15px] font-semibold text-[#4F6F52]">
-            <div className="relative group cursor-pointer py-6">
-              <span className="flex items-center gap-1 hover:text-[#1A4D2E] transition-colors">회사소개 <ChevronDown className="w-4 h-4" /></span>
-              <div className="absolute top-full left-1/2 -translate-x-1/2 bg-white shadow-lg border border-gray-100 rounded-lg py-2 w-40 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all">
-                <Link to="/company/greeting" className="block px-4 py-2 hover:bg-[#FAFAF7] hover:text-[#1A4D2E] text-sm text-gray-600">인사말</Link>
-                <Link to="/company/history" className="block px-4 py-2 hover:bg-[#FAFAF7] hover:text-[#1A4D2E] text-sm text-gray-600">연혁</Link>
-                <Link to="/company/awards" className="block px-4 py-2 hover:bg-[#FAFAF7] hover:text-[#1A4D2E] text-sm text-gray-600">수상,인증</Link>
-                <Link to="/company/location" className="block px-4 py-2 hover:bg-[#FAFAF7] hover:text-[#1A4D2E] text-sm text-gray-600">오시는길</Link>
-              </div>
-            </div>
-
-            <div className="relative group cursor-pointer py-6">
-              <span className="flex items-center gap-1 hover:text-[#1A4D2E] transition-colors">사업분야 <ChevronDown className="w-4 h-4" /></span>
-              <div className="absolute top-full left-1/2 -translate-x-1/2 bg-white shadow-lg border border-gray-100 rounded-lg py-2 w-40 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all">
-                <Link to="/business/philosophy" className="block px-4 py-2 hover:bg-[#FAFAF7] hover:text-[#1A4D2E] text-sm text-gray-600">경영철학</Link>
-                <Link to="/business/vision" className="block px-4 py-2 hover:bg-[#FAFAF7] hover:text-[#1A4D2E] text-sm text-gray-600">비전</Link>
-                <Link to="/business/core-competence" className="block px-4 py-2 hover:bg-[#FAFAF7] hover:text-[#1A4D2E] text-sm text-gray-600">핵심역량</Link>
-                <Link to="/business/farm" className="block px-4 py-2 hover:bg-[#FAFAF7] hover:text-[#1A4D2E] text-sm text-gray-600">농장소개</Link>
-              </div>
-            </div>
-
-            <div className="relative group cursor-pointer py-6">
-              <span className="flex items-center gap-1 hover:text-[#1A4D2E] transition-colors">상품소개 <ChevronDown className="w-4 h-4" /></span>
-              <div className="absolute top-full left-1/2 -translate-x-1/2 bg-white shadow-lg border border-gray-100 rounded-lg py-2 w-40 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all">
-                <Link to="/products/forest" className="block px-4 py-2 hover:bg-[#FAFAF7] hover:text-[#1A4D2E] text-sm text-gray-600">임산물</Link>
-                <Link to="/products/agriculture" className="block px-4 py-2 hover:bg-[#FAFAF7] hover:text-[#1A4D2E] text-sm text-gray-600">농산물</Link>
-                <Link to="/products/manufactured" className="block px-4 py-2 hover:bg-[#FAFAF7] hover:text-[#1A4D2E] text-sm text-gray-600">제품</Link>
-              </div>
-            </div>
-
-            <div className="relative group cursor-pointer py-6">
-              <span className="flex items-center gap-1 hover:text-[#1A4D2E] transition-colors">고객센터 <ChevronDown className="w-4 h-4" /></span>
-              <div className="absolute top-full left-1/2 -translate-x-1/2 bg-white shadow-lg border border-gray-100 rounded-lg py-2 w-40 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all">
-                <Link to="/support/notice" className="block px-4 py-2 hover:bg-[#FAFAF7] hover:text-[#1A4D2E] text-sm text-gray-600">공지사항</Link>
-                <Link to="/support/inquiry" className="block px-4 py-2 hover:bg-[#FAFAF7] hover:text-[#1A4D2E] text-sm text-gray-600">온라인문의</Link>
-                <Link to="/support/faq" className="block px-4 py-2 hover:bg-[#FAFAF7] hover:text-[#1A4D2E] text-sm text-gray-600">FAQ</Link>
-              </div>
-            </div>
-
-            <div className="relative group cursor-pointer py-6">
-              <span className="flex items-center gap-1 hover:text-[#1A4D2E] transition-colors">커뮤니티 <ChevronDown className="w-4 h-4" /></span>
-              <div className="absolute top-full left-1/2 -translate-x-1/2 bg-white shadow-lg border border-gray-100 rounded-lg py-2 w-40 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all">
-                <Link to="/community/story" className="block px-4 py-2 hover:bg-[#FAFAF7] hover:text-[#1A4D2E] text-sm text-gray-600">산골이야기</Link>
-                <Link to="/community/concert" className="block px-4 py-2 hover:bg-[#FAFAF7] hover:text-[#1A4D2E] text-sm text-gray-600">작은음악회</Link>
-              </div>
-            </div>
-
-            <Link to="/order" className="py-6 hover:text-[#1A4D2E] font-bold text-[#1A4D2E] transition-colors">
-              가맹점주문
-            </Link>
+        <div className="hidden md:block max-w-7xl mx-auto px-4 md:px-6 border-t border-[#E8DFCA]/70">
+          <nav className="flex flex-wrap items-center justify-end gap-6 lg:gap-8 text-[15px] font-semibold text-[#4F6F52] py-2">
+            <GnbMenus isFranchiseUser={isFranchiseUser} itemClassName="relative py-4" />
           </nav>
         </div>
 
-        {/* Mobile/Tablet GNB */}
-        <nav className="lg:hidden border-t border-[#E8DFCA] bg-white">
-          <div className="px-4 py-3 overflow-x-auto">
-            <div className="min-w-max flex items-center gap-6 text-[15px] font-semibold text-[#4F6F52]">
-              <Link to="/company/greeting" className="whitespace-nowrap hover:text-[#1A4D2E] transition-colors">
-                회사소개
-              </Link>
-              <Link to="/business/philosophy" className="whitespace-nowrap hover:text-[#1A4D2E] transition-colors">
-                사업분야
-              </Link>
-              <Link to="/products/forest" className="whitespace-nowrap hover:text-[#1A4D2E] transition-colors">
-                상품소개
-              </Link>
-              <Link to="/support/notice" className="whitespace-nowrap hover:text-[#1A4D2E] transition-colors">
-                고객센터
-              </Link>
-              <Link to="/community/story" className="whitespace-nowrap hover:text-[#1A4D2E] transition-colors">
-                커뮤니티
-              </Link>
-              <Link to="/order" className="whitespace-nowrap font-bold text-[#1A4D2E]">
-                가맹점주문
-              </Link>
+        <nav className="md:hidden border-t border-[#E8DFCA] bg-white">
+          <div className="max-w-7xl mx-auto px-4 py-3">
+            <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-[14px] font-semibold text-[#4F6F52]">
+              <GnbMenus isFranchiseUser={isFranchiseUser} itemClassName="relative py-2" />
             </div>
           </div>
         </nav>

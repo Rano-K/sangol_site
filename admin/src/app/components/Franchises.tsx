@@ -42,6 +42,7 @@ export function Franchises({ token }: FranchisesProps) {
   const [pageSize, setPageSize] = useState<(typeof PAGE_SIZE_OPTIONS)[number]>(10);
   const [franchiseKeywordFilter, setFranchiseKeywordFilter] = useState("");
   const [form, setForm] = useState({
+    franchiseKey: '',
     storeType: '가맹점',
     name: '',
     storePhone: '',
@@ -77,6 +78,7 @@ export function Franchises({ token }: FranchisesProps) {
   const resetForm = () => {
     setEditingId(null);
     setForm({
+      franchiseKey: '',
       storeType: '가맹점',
       name: '',
       storePhone: '',
@@ -101,6 +103,7 @@ export function Franchises({ token }: FranchisesProps) {
   const startEdit = (item: FranchiseRow) => {
     setEditingId(item.id);
     setForm({
+      franchiseKey: item.franchise_key || '',
       storeType: item.store_type || '가맹점',
       name: item.name || '',
       storePhone: item.store_phone || '',
@@ -118,6 +121,7 @@ export function Franchises({ token }: FranchisesProps) {
     try {
       const isEdit = editingId !== null;
       const payload = {
+        franchiseKey: form.franchiseKey.trim() || null,
         storeType: form.storeType.trim(),
         name: form.name.trim(),
         storePhone: form.storePhone.trim() || null,
@@ -169,6 +173,7 @@ export function Franchises({ token }: FranchisesProps) {
     return franchises.filter(
       (row) =>
         row.name.toLowerCase().includes(keyword) ||
+        (row.franchise_key || '').toLowerCase().includes(keyword) ||
         (row.store_type || '').toLowerCase().includes(keyword) ||
         (row.address || '').toLowerCase().includes(keyword) ||
         (row.owner_name || '').toLowerCase().includes(keyword)
@@ -220,14 +225,15 @@ export function Franchises({ token }: FranchisesProps) {
                   setFranchiseKeywordFilter(e.target.value);
                   setCurrentPage(1);
                 }}
-                placeholder="매장명/주소/대표자 검색"
+                placeholder="가맹점키/매장명/주소/대표자 검색"
                 className="w-48 border rounded-lg px-3 py-1.5 text-sm"
               />
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[1200px]">
+              <table className="w-full min-w-[1320px]">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
+                    <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">가맹점 키</th>
                     <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">매장구분</th>
                     <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">매장명</th>
                     <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">매장전화</th>
@@ -245,6 +251,7 @@ export function Franchises({ token }: FranchisesProps) {
                       key={row.id}
                       className={`${index % 2 === 1 ? 'bg-lime-50' : 'bg-white'} hover:bg-lime-100 transition`}
                     >
+                      <td className="px-6 py-4 text-sm font-mono text-gray-700">{row.franchise_key || '-'}</td>
                       <td className="px-6 py-4 text-sm text-gray-700">{row.store_type}</td>
                       <td className="px-6 py-4 text-sm text-gray-900">{row.name}</td>
                       <td className="px-6 py-4 text-sm text-gray-700">{row.store_phone || '-'}</td>
@@ -278,7 +285,7 @@ export function Franchises({ token }: FranchisesProps) {
                   ))}
                   {pagedRows.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="px-6 py-10 text-center text-sm text-gray-500">
+                      <td colSpan={10} className="px-6 py-10 text-center text-sm text-gray-500">
                         등록된 가맹점이 없습니다.
                       </td>
                     </tr>
@@ -355,6 +362,17 @@ export function Franchises({ token }: FranchisesProps) {
             </div>
             <form onSubmit={submit} className="p-6 space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">가맹점 키</label>
+                  <input
+                    value={form.franchiseKey}
+                    onChange={(e) => setForm((prev) => ({ ...prev, franchiseKey: e.target.value }))}
+                    className="w-full border rounded-lg px-3 py-2 font-mono"
+                    placeholder="미입력 시 자동 생성 (예: FRA-000001)"
+                    maxLength={32}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">영문/숫자/-/_ 조합, 미입력 시 자동으로 부여됩니다.</p>
+                </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     매장구분 (직영점/가맹점) <span className="text-red-600">*</span>

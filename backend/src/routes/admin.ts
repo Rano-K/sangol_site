@@ -4,6 +4,10 @@ import { authenticateToken, requireAdmin } from '../middleware/auth';
 import { body, param, validationResult, ValidationChain } from 'express-validator';
 import { ensureLocationFranchiseTableReady } from './franchises';
 import { buildPublicApiUrl, publicApiBaseUrl } from '../utils/publicUrls';
+import {
+  inventoryNoteSuffix,
+  syncOrderInventoryOnStatusChange,
+} from '../services/orderInventory';
 
 const router = express.Router();
 const ALLOWED_IMAGE_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
@@ -103,7 +107,8 @@ const ensureProductCategoryTableReady = async (): Promise<void> => {
     VALUES
       ('임산물', 'FP', TRUE),
       ('농산물', 'AG', TRUE),
-      ('제품(가공식품)', 'PR', TRUE)
+      ('제품(가공식품)', 'PR', TRUE),
+      ('재공품', 'WIP', TRUE)
     ON CONFLICT (name) DO NOTHING;
   `);
 };
@@ -152,6 +157,11 @@ const ensureFranchiseKeyColumnsReady = async (): Promise<void> => {
   `);
 };
 
+const normalizeFranchiseKey = (value?: string | null): string | null => {
+  const normalized = String(value ?? '').trim().toUpperCase();
+  return normalized || null;
+};
+
 const buildProductImageUrl = (productId: number | string): string =>
   buildPublicApiUrl(`/products/${productId}/image-file`);
 const getExtensionFromName = (filename: string): string | null => {
@@ -174,12 +184,124 @@ const isInternalProductImageUrl = (imageUrl: string): boolean => {
   const value = imageUrl.trim();
   if (!value) return false;
   if (/^\/api\/products\/\d+\/image-file$/i.test(value)) return true;
+  if (/^\/api\/products\/images\/\d+\/file$/i.test(value)) return true;
   try {
     const parsed = new URL(value);
-    return /^\/api\/products\/\d+\/image-file$/i.test(parsed.pathname);
+    return (
+      /^\/api\/products\/\d+\/image-file$/i.test(parsed.pathname) ||
+      /^\/api\/products\/images\/\d+\/file$/i.test(parsed.pathname)
+    );
   } catch (_error) {
     return false;
   }
+};
+
+const getPathnameFromImageUrl = (imageUrl: string): string => {
+  const value = imageUrl.trim();
+  if (!value) return '';
+  if (value.startsWith('http://') || value.startsWith('https://')) {
+    try {
+      return new URL(value).pathname;
+    } catch (_error) {
+      return value;
+    }
+  }
+  return value;
+};
+
+const parseGalleryImageIdFromUrl = (imageUrl: string): number | null => {
+  const pathname = getPathnameFromImageUrl(imageUrl);
+  const match = pathname.match(/^\/api\/products\/images\/(\d+)\/file$/i);
+  return match ? Number(match[1]) : null;
+};
+
+const parseLegacyProductImageProductId = (imageUrl: string): number | null => {
+  const pathname = getPathnameFromImageUrl(imageUrl);
+  const match = pathname.match(/^\/api\/products\/(\d+)\/image-file$/i);
+  return match ? Number(match[1]) : null;
+};
+
+type ExistingGalleryImage = {
+  id: number;
+  image_url: string | null;
+  image_data: Buffer | null;
+  image_mime_type: string | null;
+  image_original_name: string | null;
+};
+
+type ResolvedProductImageInsert = {
+  imageUrl: string | null;
+  imageBuffer: Buffer | null;
+  imageMimeType: string | null;
+  imageOriginalName: string | null;
+};
+
+const resolveProductImageForInsert = (
+  productId: number,
+  item: ProductImageInput,
+  existingGallery: ExistingGalleryImage[],
+  legacyProduct: {
+    image_data: Buffer | null;
+    image_mime_type: string | null;
+    image_original_name: string | null;
+    image_url: string | null;
+  } | null
+): ResolvedProductImageInsert => {
+  const uploadBuffer = validateAndBuildImageBuffer(item);
+  if (uploadBuffer) {
+    return {
+      imageUrl: null,
+      imageBuffer: uploadBuffer,
+      imageMimeType: item.imageMimeType ?? null,
+      imageOriginalName: item.imageOriginalName ?? null,
+    };
+  }
+
+  const imageUrl = String(item.imageUrl ?? '').trim();
+  if (!imageUrl) {
+    return { imageUrl: null, imageBuffer: null, imageMimeType: null, imageOriginalName: null };
+  }
+
+  if (!isInternalProductImageUrl(imageUrl)) {
+    return { imageUrl, imageBuffer: null, imageMimeType: null, imageOriginalName: null };
+  }
+
+  const galleryId = parseGalleryImageIdFromUrl(imageUrl);
+  if (galleryId !== null) {
+    const existing = existingGallery.find((row) => row.id === galleryId);
+    if (existing?.image_data && existing.image_data.length > 0) {
+      return {
+        imageUrl: null,
+        imageBuffer: existing.image_data,
+        imageMimeType: existing.image_mime_type,
+        imageOriginalName: existing.image_original_name,
+      };
+    }
+    if (existing?.image_url && !isInternalProductImageUrl(existing.image_url)) {
+      return {
+        imageUrl: existing.image_url,
+        imageBuffer: null,
+        imageMimeType: null,
+        imageOriginalName: null,
+      };
+    }
+  }
+
+  const legacyProductId = parseLegacyProductImageProductId(imageUrl);
+  if (
+    legacyProductId === productId &&
+    legacyProduct?.image_data &&
+    legacyProduct.image_data.length > 0
+  ) {
+    return {
+      imageUrl: null,
+      imageBuffer: legacyProduct.image_data,
+      imageMimeType: legacyProduct.image_mime_type,
+      imageOriginalName: legacyProduct.image_original_name,
+    };
+  }
+
+  throw new Error('기존 이미지를 찾을 수 없습니다. 이미지를 다시 업로드해 주세요.');
 };
 
 type ProductImageInput = {
@@ -287,24 +409,57 @@ const normalizeIncomingImageItems = (req: Request): ProductImageInput[] => {
 
 const replaceProductImages = async (productId: number, imageItems: ProductImageInput[]): Promise<void> => {
   await ensureProductImageTableReady();
-  await pool.query('DELETE FROM product_images WHERE product_id = $1', [productId]);
-  for (let i = 0; i < imageItems.length; i += 1) {
-    const item = imageItems[i];
-    const imageBuffer = validateAndBuildImageBuffer(item);
-    await pool.query(
-      `INSERT INTO product_images (
-         product_id, display_order, is_primary, image_url, image_data, image_mime_type, image_original_name
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [
-        productId,
-        i,
-        Boolean(item.isPrimary),
-        item.imageUrl ?? null,
-        imageBuffer,
-        imageBuffer ? item.imageMimeType : null,
-        imageBuffer ? item.imageOriginalName : null,
-      ]
+  const client = await pool.connect();
+  try {
+    const { rows: existingGallery } = await client.query<ExistingGalleryImage>(
+      `SELECT id, image_url, image_data, image_mime_type, image_original_name
+       FROM product_images
+       WHERE product_id = $1
+       ORDER BY display_order ASC, id ASC`,
+      [productId]
     );
+    const { rows: legacyRows } = await client.query<{
+      image_data: Buffer | null;
+      image_mime_type: string | null;
+      image_original_name: string | null;
+      image_url: string | null;
+    }>(
+      `SELECT image_data, image_mime_type, image_original_name, image_url
+       FROM products
+       WHERE id = $1`,
+      [productId]
+    );
+    const legacyProduct = legacyRows[0] ?? null;
+    const resolvedItems = imageItems.map((item) =>
+      resolveProductImageForInsert(productId, item, existingGallery, legacyProduct)
+    );
+
+    await client.query('BEGIN');
+    await client.query('DELETE FROM product_images WHERE product_id = $1', [productId]);
+    for (let i = 0; i < imageItems.length; i += 1) {
+      const item = imageItems[i];
+      const resolved = resolvedItems[i];
+      await client.query(
+        `INSERT INTO product_images (
+           product_id, display_order, is_primary, image_url, image_data, image_mime_type, image_original_name
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [
+          productId,
+          i,
+          Boolean(item.isPrimary),
+          resolved.imageUrl,
+          resolved.imageBuffer,
+          resolved.imageBuffer ? resolved.imageMimeType : null,
+          resolved.imageBuffer ? resolved.imageOriginalName : null,
+        ]
+      );
+    }
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
   }
 };
 
@@ -597,6 +752,14 @@ router.get('/location-franchises', async (_req: Request, res: Response) => {
 
 router.post(
   '/location-franchises',
+  body('franchiseKey')
+    .optional({ nullable: true })
+    .isString()
+    .bail()
+    .trim()
+    .isLength({ max: 32 })
+    .matches(/^[A-Z0-9_-]+$/i)
+    .withMessage('가맹점 키는 영문/숫자/-/_ 조합만 허용됩니다.'),
   body('storeType').isString().trim().isLength({ min: 1, max: 20 }),
   body('name').isString().trim().isLength({ min: 1, max: 255 }),
   body('storePhone').optional({ nullable: true }).isString().trim().isLength({ max: 30 }),
@@ -608,6 +771,7 @@ router.post(
   async (req: Request, res: Response) => {
     if (!validate(req, res)) return;
     const {
+      franchiseKey = null,
       storeType,
       name,
       storePhone = null,
@@ -617,6 +781,7 @@ router.post(
       displayOrder = 0,
       isActive = true,
     } = req.body as {
+      franchiseKey?: string | null;
       storeType: string;
       name: string;
       storePhone?: string | null;
@@ -627,14 +792,16 @@ router.post(
       isActive?: boolean;
     };
 
+    const normalizedFranchiseKey = normalizeFranchiseKey(franchiseKey);
+
     try {
       await ensureFranchiseKeyColumnsReady();
       const { rows } = await pool.query<{ id: number }>(
         `INSERT INTO location_franchises (
-          store_type, name, store_phone, owner_name, owner_phone, address, display_order, is_active
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+          franchise_key, store_type, name, store_phone, owner_name, owner_phone, address, display_order, is_active
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         RETURNING id`,
-        [storeType.trim(), name.trim(), storePhone, ownerName, ownerPhone, address.trim(), displayOrder, isActive]
+        [normalizedFranchiseKey, storeType.trim(), name.trim(), storePhone, ownerName, ownerPhone, address.trim(), displayOrder, isActive]
       );
       const locationId = Number(rows[0].id);
       await pool.query(
@@ -652,6 +819,10 @@ router.post(
       );
       res.status(201).json({ message: '가맹점이 등록되었습니다.', franchise: syncedRows[0] ?? null });
     } catch (error) {
+      if ((error as { code?: string }).code === '23505') {
+        res.status(409).json({ error: '이미 사용 중인 가맹점 키입니다.' });
+        return;
+      }
       console.error('Create admin location franchise error:', error);
       res.status(500).json({ error: '가맹점 등록 중 오류가 발생했습니다.' });
     }
@@ -661,6 +832,14 @@ router.post(
 router.patch(
   '/location-franchises/:id',
   param('id').isInt({ min: 1 }),
+  body('franchiseKey')
+    .optional({ nullable: true })
+    .isString()
+    .bail()
+    .trim()
+    .isLength({ max: 32 })
+    .matches(/^[A-Z0-9_-]+$/i)
+    .withMessage('가맹점 키는 영문/숫자/-/_ 조합만 허용됩니다.'),
   body('storeType').optional().isString().trim().isLength({ min: 1, max: 20 }),
   body('name').optional().isString().trim().isLength({ min: 1, max: 255 }),
   body('storePhone').optional({ nullable: true }).isString().trim().isLength({ max: 30 }),
@@ -672,7 +851,8 @@ router.patch(
   async (req: Request, res: Response) => {
     if (!validate(req, res)) return;
     const id = Number(req.params.id);
-    const { storeType, name, storePhone, ownerName, ownerPhone, address, displayOrder, isActive } = req.body as {
+    const { franchiseKey, storeType, name, storePhone, ownerName, ownerPhone, address, displayOrder, isActive } = req.body as {
+      franchiseKey?: string | null;
       storeType?: string;
       name?: string;
       storePhone?: string | null;
@@ -682,24 +862,27 @@ router.patch(
       displayOrder?: number;
       isActive?: boolean;
     };
+    const normalizedFranchiseKey = normalizeFranchiseKey(franchiseKey);
 
     try {
       await ensureFranchiseKeyColumnsReady();
       const { rows } = await pool.query<{ id: number }>(
         `UPDATE location_franchises
          SET
-           store_type = COALESCE($1, store_type),
-           name = COALESCE($2, name),
-           store_phone = COALESCE($3, store_phone),
-           owner_name = COALESCE($4, owner_name),
-           owner_phone = COALESCE($5, owner_phone),
-           address = COALESCE($6, address),
-           display_order = COALESCE($7, display_order),
-           is_active = COALESCE($8, is_active),
+           franchise_key = COALESCE($1, franchise_key),
+           store_type = COALESCE($2, store_type),
+           name = COALESCE($3, name),
+           store_phone = COALESCE($4, store_phone),
+           owner_name = COALESCE($5, owner_name),
+           owner_phone = COALESCE($6, owner_phone),
+           address = COALESCE($7, address),
+           display_order = COALESCE($8, display_order),
+           is_active = COALESCE($9, is_active),
            updated_at = NOW()
-         WHERE id = $9
+         WHERE id = $10
          RETURNING id`,
         [
+          normalizedFranchiseKey,
           storeType?.trim() ?? null,
           name?.trim() ?? null,
           storePhone ?? null,
@@ -724,6 +907,10 @@ router.patch(
       );
       res.json({ message: '가맹점이 수정되었습니다.', franchise: syncedRows[0] ?? null });
     } catch (error) {
+      if ((error as { code?: string }).code === '23505') {
+        res.status(409).json({ error: '이미 사용 중인 가맹점 키입니다.' });
+        return;
+      }
       console.error('Update admin location franchise error:', error);
       res.status(500).json({ error: '가맹점 수정 중 오류가 발생했습니다.' });
     }
@@ -863,6 +1050,7 @@ router.get('/orders', async (req: Request, res: Response) => {
          f.contact_person AS franchise_contact_person,
          f.phone AS franchise_phone,
          f.address AS franchise_address,
+         f.business_number AS franchise_business_number,
          o.delivery_address,
          o.delivery_phone,
          o.recipient_name,
@@ -914,9 +1102,10 @@ router.patch(
 
   try {
     await client.query('BEGIN');
+    await ensureProductColumnsReady();
 
     const { rows: currentRows } = await client.query<{ status: string }>(
-      'SELECT status FROM orders WHERE id = $1',
+      'SELECT status FROM orders WHERE id = $1 FOR UPDATE',
       [id]
     );
 
@@ -926,6 +1115,20 @@ router.patch(
       return;
     }
 
+    const previousStatus = currentRows[0].status;
+    if (previousStatus === status) {
+      await client.query('ROLLBACK');
+      res.json({ message: '주문 상태가 이미 동일합니다.' });
+      return;
+    }
+
+    const inventoryAction = await syncOrderInventoryOnStatusChange(
+      client,
+      Number(id),
+      previousStatus,
+      status
+    );
+
     await client.query(
       'UPDATE orders SET status = $1 WHERE id = $2',
       [status, id]
@@ -933,17 +1136,195 @@ router.patch(
 
     await client.query(
       `INSERT INTO order_status_logs (order_id, from_status, to_status, changed_by_user_id, note)
-       VALUES ($1, $2, $3, $4, '관리자 상태 변경')`,
-      [id, currentRows[0].status, status, adminUserId]
+       VALUES ($1, $2, $3, $4, $5)`,
+      [
+        id,
+        previousStatus,
+        status,
+        adminUserId,
+        `관리자 상태 변경${inventoryNoteSuffix(inventoryAction)}`,
+      ]
     );
 
     await client.query('COMMIT');
 
-    res.json({ message: '주문 상태가 업데이트되었습니다.' });
+    res.json({
+      message: '주문 상태가 업데이트되었습니다.',
+      inventoryAction,
+    });
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('Update order status error:', error);
-    res.status(500).json({ error: '주문 상태 업데이트 중 오류가 발생했습니다.' });
+    const message =
+      error instanceof Error ? error.message : '주문 상태 업데이트 중 오류가 발생했습니다.';
+    const isStockError = error instanceof Error && error.message.includes('재고');
+    res.status(isStockError ? 409 : 500).json({ error: message });
+  } finally {
+    client.release();
+  }
+});
+
+// 주문 수정 (관리자)
+router.patch(
+  '/orders/:id',
+  param('id').isInt({ min: 1 }),
+  body('items').optional().isArray({ min: 1 }),
+  body('items.*.productId').optional().isInt({ min: 1 }),
+  body('items.*.quantity').optional().isInt({ min: 1 }),
+  body('deliveryAddress').optional({ nullable: true }).isString(),
+  body('deliveryPhone').optional({ nullable: true }).isString(),
+  body('recipientName').optional({ nullable: true }).isString(),
+  body('deliveryRequest').optional({ nullable: true }).isString(),
+  async (req: Request, res: Response) => {
+    if (!validate(req, res)) return;
+
+    const orderId = Number(req.params.id);
+    const { items, deliveryAddress, deliveryPhone, recipientName, deliveryRequest } = req.body as {
+      items?: Array<{ productId: number; quantity: number }>;
+      deliveryAddress?: string | null;
+      deliveryPhone?: string | null;
+      recipientName?: string | null;
+      deliveryRequest?: string | null;
+    };
+    const adminUserId = req.user?.id ?? null;
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await ensureOrderColumnsReady();
+
+      const orderRows = await client.query<{ status: string; order_channel: string }>(
+        'SELECT status, order_channel FROM orders WHERE id = $1 LIMIT 1',
+        [orderId]
+      );
+      if (orderRows.rows.length === 0) {
+        await client.query('ROLLBACK');
+        res.status(404).json({ error: '수정할 주문을 찾을 수 없습니다.' });
+        return;
+      }
+      if (orderRows.rows[0].order_channel !== 'b2b') {
+        await client.query('ROLLBACK');
+        res.status(409).json({ error: 'B2B 주문만 수정할 수 있습니다.' });
+        return;
+      }
+      if (orderRows.rows[0].status !== 'pending') {
+        await client.query('ROLLBACK');
+        res.status(409).json({ error: '대기(pending) 상태의 주문만 수정할 수 있습니다.' });
+        return;
+      }
+
+      let computedTotal = Number(
+        (
+          await client.query<{ total: string }>(
+            `SELECT COALESCE(SUM(total_price), 0)::text AS total
+             FROM order_items
+             WHERE order_id = $1`,
+            [orderId]
+          )
+        ).rows[0].total
+      );
+
+      if (Array.isArray(items)) {
+        await client.query('DELETE FROM order_items WHERE order_id = $1', [orderId]);
+        let nextTotal = 0;
+        for (const item of items) {
+          const productRows = await client.query<{ price: string; stock_status: string }>(
+            'SELECT price, stock_status FROM products WHERE id = $1 AND is_active = TRUE',
+            [item.productId]
+          );
+          if (productRows.rows.length === 0) throw new Error('주문 가능한 상품을 찾을 수 없습니다.');
+          if (productRows.rows[0].stock_status === 'out_of_stock') throw new Error('품절 상품은 주문할 수 없습니다.');
+          const unitPrice = Number(productRows.rows[0].price);
+          const itemTotal = unitPrice * item.quantity;
+          nextTotal += itemTotal;
+          await client.query(
+            `INSERT INTO order_items (order_id, product_id, quantity, unit_price, total_price)
+             VALUES ($1, $2, $3, $4, $5)`,
+            [orderId, item.productId, item.quantity, unitPrice, itemTotal]
+          );
+        }
+        computedTotal = nextTotal;
+      }
+
+      await client.query(
+        `UPDATE orders
+         SET delivery_address = COALESCE($1, delivery_address),
+             delivery_phone = COALESCE($2, delivery_phone),
+             recipient_name = COALESCE($3, recipient_name),
+             delivery_request = COALESCE($4, delivery_request),
+             total_amount = $5,
+             updated_at = NOW()
+         WHERE id = $6`,
+        [
+          deliveryAddress ?? null,
+          deliveryPhone ?? null,
+          recipientName ?? null,
+          deliveryRequest ?? null,
+          computedTotal,
+          orderId,
+        ]
+      );
+
+      await client.query(
+        `INSERT INTO order_status_logs (order_id, from_status, to_status, changed_by_user_id, note)
+         VALUES ($1, 'pending', 'pending', $2, '관리자 주문 수정')`,
+        [orderId, adminUserId]
+      );
+
+      await client.query('COMMIT');
+      res.json({ message: '주문이 수정되었습니다.', orderId });
+    } catch (error) {
+      await client.query('ROLLBACK');
+      console.error('Admin update order error:', error);
+      res.status(500).json({ error: error instanceof Error ? error.message : '주문 수정 중 오류가 발생했습니다.' });
+    } finally {
+      client.release();
+    }
+  }
+);
+
+// 주문 삭제 (관리자)
+router.delete('/orders/:id', param('id').isInt({ min: 1 }), async (req: Request, res: Response) => {
+  if (!validate(req, res)) return;
+  const orderId = Number(req.params.id);
+  const adminUserId = req.user?.id ?? null;
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+    const orderRows = await client.query<{ status: string; order_channel: string }>(
+      'SELECT status, order_channel FROM orders WHERE id = $1 LIMIT 1',
+      [orderId]
+    );
+    if (orderRows.rows.length === 0) {
+      await client.query('ROLLBACK');
+      res.status(404).json({ error: '삭제할 주문을 찾을 수 없습니다.' });
+      return;
+    }
+    if (orderRows.rows[0].order_channel !== 'b2b') {
+      await client.query('ROLLBACK');
+      res.status(409).json({ error: 'B2B 주문만 삭제할 수 있습니다.' });
+      return;
+    }
+    if (orderRows.rows[0].status !== 'pending') {
+      await client.query('ROLLBACK');
+      res.status(409).json({ error: '대기(pending) 상태의 주문만 삭제할 수 있습니다.' });
+      return;
+    }
+
+    await client.query(
+      `INSERT INTO order_status_logs (order_id, from_status, to_status, changed_by_user_id, note)
+       VALUES ($1, 'pending', 'cancelled', $2, '관리자 주문 삭제')`,
+      [orderId, adminUserId]
+    );
+    await client.query('DELETE FROM order_items WHERE order_id = $1', [orderId]);
+    await client.query('DELETE FROM orders WHERE id = $1', [orderId]);
+    await client.query('COMMIT');
+    res.json({ message: '주문이 삭제되었습니다.', orderId });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Admin delete order error:', error);
+    res.status(500).json({ error: '주문 삭제 중 오류가 발생했습니다.' });
   } finally {
     client.release();
   }
@@ -1469,6 +1850,10 @@ router.patch(
     } catch (error) {
       if ((error as { code?: string }).code === '23505') {
         res.status(409).json({ error: '이미 사용 중인 품목코드입니다.' });
+        return;
+      }
+      if (error instanceof Error && error.message) {
+        res.status(400).json({ error: error.message });
         return;
       }
       console.error('Update admin product error:', error);

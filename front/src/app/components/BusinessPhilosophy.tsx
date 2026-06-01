@@ -66,7 +66,7 @@ export function BusinessPhilosophy() {
       </div>
       <SectionQuickLinks items={BUSINESS_QUICK_LINKS} />
 
-      <div className="max-w-7xl mx-auto px-6 py-20 md:py-32 w-full flex flex-col gap-16">
+      <div className="site-container py-20 md:py-32 w-full flex flex-col gap-16">
         
         <div className="text-center max-w-3xl mx-auto mb-4">
           <h2 className="text-3xl md:text-4xl font-bold text-[#1A4D2E] mb-6 leading-tight">

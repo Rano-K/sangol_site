@@ -177,6 +177,7 @@ const mapMedia = (row: CmsMediaRow) => ({
   sizeBytes: row.size_bytes,
   filePath: row.file_path,
   publicUrl: row.public_url,
+  fileUrl: buildCmsMediaFileUrl(row.id),
   createdByUserId: row.created_by_user_id,
   createdAt: row.created_at,
 });

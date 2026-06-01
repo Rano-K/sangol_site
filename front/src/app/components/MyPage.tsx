@@ -3,9 +3,11 @@ import { useAuth } from "../hooks/useAuth";
 import { useShopping } from "../hooks/useShopping";
 import { useEffect, useMemo, useState } from "react";
 import { API_BASE_URL } from "../lib/apiBaseUrl";
+import { useCmsPage } from "../hooks/useCmsPage";
 
 type FranchiseOrderItem = {
   id: number;
+  productId?: number;
   productName: string;
   quantity: number;
   unitPrice: number;
@@ -17,8 +19,18 @@ type FranchiseOrder = {
   status: string;
   total_amount: number | string;
   delivery_address: string | null;
+  delivery_phone?: string | null;
+  recipient_name?: string | null;
   delivery_request: string | null;
   created_at: string;
+  items: FranchiseOrderItem[];
+};
+
+type FranchiseOrderEditDraft = {
+  recipientName: string;
+  deliveryPhone: string;
+  deliveryAddress: string;
+  deliveryRequest: string;
   items: FranchiseOrderItem[];
 };
 
@@ -48,14 +60,37 @@ export function MyPage() {
   const [franchiseOrders, setFranchiseOrders] = useState<FranchiseOrder[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(false);
   const [editingOrderId, setEditingOrderId] = useState<number | null>(null);
-  const [editingAddress, setEditingAddress] = useState("");
-  const [editingRequest, setEditingRequest] = useState("");
+  const [editDraft, setEditDraft] = useState<FranchiseOrderEditDraft | null>(null);
+  const { data: orderCms } = useCmsPage("order");
   const activeTab = new URLSearchParams(location.search).get("tab");
   const shouldRedirectToLogin = !isAuthenticated || !user || !token;
   const isFranchiseUser = user?.role === "franchise";
   const canUseFranchiseOrder = isFranchiseUser || user?.role === "admin";
   const cartTotal = cartItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
   const cartItemCount = cartItems.reduce((sum, item) => sum + item.quantity, 0);
+  const editingOrder = useMemo(
+    () => (editingOrderId === null ? null : franchiseOrders.find((order) => order.id === editingOrderId) || null),
+    [editingOrderId, franchiseOrders]
+  );
+  const originalOrderTotal = Number(editingOrder?.total_amount || 0);
+  const draftOrderTotal = useMemo(
+    () => (editDraft ? editDraft.items.reduce((sum, item) => sum + Number(item.unitPrice || 0) * Math.max(1, Number(item.quantity || 1)), 0) : 0),
+    [editDraft]
+  );
+  const orderTotalDiff = draftOrderTotal - originalOrderTotal;
+  const paymentSection =
+    orderCms?.sections && typeof orderCms.sections === "object"
+      ? ((orderCms.sections as Record<string, unknown>).payment as Record<string, unknown> | undefined)
+      : undefined;
+  const depositAccountName =
+    (typeof paymentSection?.accountName === "string" && paymentSection.accountName.trim()) ||
+    ((import.meta.env["VITE_B2B_DEPOSIT_ACCOUNT_NAME"] as string | undefined) ?? "");
+  const depositAccountNumber =
+    (typeof paymentSection?.accountNumber === "string" && paymentSection.accountNumber.trim()) ||
+    ((import.meta.env["VITE_B2B_DEPOSIT_ACCOUNT_NUMBER"] as string | undefined) ?? "");
+  const requiredNotice =
+    (typeof paymentSection?.requiredNotice === "string" && paymentSection.requiredNotice.trim()) ||
+    "※ 반드시 입금 후 주문을 확정해 주세요. 미입금 시 출고가 진행되지 않습니다.";
 
   const runSafely = async (key: string, fn: () => Promise<void>, fallbackError: string) => {
     try {
@@ -136,14 +171,59 @@ export function MyPage() {
 
   const startEditOrder = (order: FranchiseOrder) => {
     setEditingOrderId(order.id);
-    setEditingAddress(order.delivery_address || "");
-    setEditingRequest(order.delivery_request || "");
+    setEditDraft({
+      recipientName: order.recipient_name || "",
+      deliveryPhone: order.delivery_phone || "",
+      deliveryAddress: order.delivery_address || "",
+      deliveryRequest: order.delivery_request || "",
+      items: Array.isArray(order.items) ? order.items.map((item) => ({ ...item })) : [],
+    });
+  };
+
+  const cancelEditOrder = () => {
+    setEditingOrderId(null);
+    setEditDraft(null);
+  };
+
+  const updateDraftItemQuantity = (itemId: number, nextQuantity: number) => {
+    setEditDraft((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        items: prev.items.map((item) =>
+          item.id === itemId ? { ...item, quantity: Math.max(1, Math.floor(nextQuantity || 1)) } : item
+        ),
+      };
+    });
+  };
+
+  const removeDraftItem = (itemId: number) => {
+    setEditDraft((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        items: prev.items.filter((item) => item.id !== itemId),
+      };
+    });
   };
 
   const saveOrderMeta = async (orderId: number) => {
     await runSafely(
       `franchise-order-update-${orderId}`,
       async () => {
+        if (!editDraft) throw new Error("수정할 주문 정보가 없습니다.");
+        if (editDraft.items.length === 0) {
+          throw new Error("주문 항목은 최소 1개 이상이어야 합니다.");
+        }
+        const invalidItem = editDraft.items.find((item) => !Number.isInteger(item.quantity) || item.quantity < 1);
+        if (invalidItem) {
+          throw new Error("수량은 1 이상의 정수로 입력해 주세요.");
+        }
+        const missingProduct = editDraft.items.find((item) => !Number.isFinite(Number(item.productId)));
+        if (missingProduct) {
+          throw new Error("일부 품목은 상품 식별자가 없어 수정할 수 없습니다.");
+        }
+
         const response = await fetch(`${apiBaseUrl}/orders/franchise/${orderId}`, {
           method: "PATCH",
           headers: {
@@ -151,13 +231,19 @@ export function MyPage() {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            deliveryAddress: editingAddress.trim() || null,
-            deliveryRequest: editingRequest.trim() || null,
+            recipientName: editDraft.recipientName.trim() || null,
+            deliveryPhone: editDraft.deliveryPhone.trim() || null,
+            deliveryAddress: editDraft.deliveryAddress.trim() || null,
+            deliveryRequest: editDraft.deliveryRequest.trim() || null,
+            items: editDraft.items.map((item) => ({
+              productId: Number(item.productId),
+              quantity: Math.max(1, Math.floor(item.quantity || 1)),
+            })),
           }),
         });
         const data = await response.json();
         if (!response.ok) throw new Error(data?.error || "주문 수정 실패");
-        setEditingOrderId(null);
+        cancelEditOrder();
         await loadFranchiseOrders();
       },
       "주문 수정 실패"
@@ -175,7 +261,7 @@ export function MyPage() {
         });
         const data = await response.json();
         if (!response.ok) throw new Error(data?.error || "주문 삭제 실패");
-        if (editingOrderId === orderId) setEditingOrderId(null);
+        if (editingOrderId === orderId) cancelEditOrder();
         await loadFranchiseOrders();
       },
       "주문 삭제 실패"
@@ -184,7 +270,7 @@ export function MyPage() {
 
   return (
     <div className="flex-1 bg-[#F4F6F1] py-16 px-4">
-      <div className="max-w-5xl mx-auto space-y-6">
+      <div className="site-container site-container--narrow space-y-6">
         <div className="bg-white border border-[#E2E8D9] rounded-3xl p-8 shadow-sm">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
@@ -287,6 +373,12 @@ export function MyPage() {
                 신규 주문
               </Link>
             </div>
+            <div className="mb-4 rounded-2xl border border-[#D7E2CE] bg-[#F7FAF5] p-4">
+              <p className="text-xs font-semibold text-[#65725F]">입금 계좌 안내</p>
+              <p className="mt-1 text-sm font-bold text-[#1A4D2E]">{depositAccountName || "계좌명을 관리자에서 설정해 주세요."}</p>
+              <p className="text-sm font-semibold text-[#1A4D2E]">{depositAccountNumber || "계좌번호를 관리자에서 설정해 주세요."}</p>
+              <p className="mt-2 text-sm font-extrabold text-red-600">{requiredNotice}</p>
+            </div>
             {loadingOrders ? (
               <p className="text-sm text-[#6D7568]">주문 내역을 불러오는 중...</p>
             ) : franchiseOrders.length === 0 ? (
@@ -295,7 +387,6 @@ export function MyPage() {
               <div className="space-y-4">
                 {franchiseOrders.map((order) => {
                   const isPending = order.status === "pending";
-                  const isEditing = editingOrderId === order.id;
                   const statusMeta = getOrderStatusMeta(order.status);
                   return (
                     <div key={order.id} className="rounded-2xl border border-[#E2E8D9] p-4 bg-[#FBFCF9]">
@@ -321,56 +412,21 @@ export function MyPage() {
                             </div>
                           ))}
                       </div>
-                      {isEditing ? (
-                        <div className="space-y-2 mb-3">
-                          <input
-                            value={editingAddress}
-                            onChange={(e) => setEditingAddress(e.target.value)}
-                            className="w-full rounded-lg border border-[#D2DAC7] px-3 py-2 text-sm"
-                            placeholder="배송지"
-                          />
-                          <input
-                            value={editingRequest}
-                            onChange={(e) => setEditingRequest(e.target.value)}
-                            className="w-full rounded-lg border border-[#D2DAC7] px-3 py-2 text-sm"
-                            placeholder="배송 요청사항"
-                          />
-                        </div>
-                      ) : (
-                        <div className="text-xs text-[#6D7568] mb-3">
-                          <p>배송지: {order.delivery_address || "-"}</p>
-                          <p>요청사항: {order.delivery_request || "-"}</p>
-                        </div>
-                      )}
+                      <div className="text-xs text-[#6D7568] mb-3 space-y-0.5">
+                        <p>수령인: {order.recipient_name || "-"}</p>
+                        <p>연락처: {order.delivery_phone || "-"}</p>
+                        <p>배송지: {order.delivery_address || "-"}</p>
+                        <p>요청사항: {order.delivery_request || "-"}</p>
+                      </div>
                       <div className="flex flex-wrap gap-2">
                         {isPending ? (
-                          isEditing ? (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => void saveOrderMeta(order.id)}
-                                disabled={busyKey !== null}
-                                className="px-3 py-1.5 rounded-xl bg-[#1A4D2E] text-white text-sm disabled:opacity-40"
-                              >
-                                저장
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setEditingOrderId(null)}
-                                className="px-3 py-1.5 rounded-xl border border-[#D2DAC7] text-sm"
-                              >
-                                취소
-                              </button>
-                            </>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => startEditOrder(order)}
-                              className="px-3 py-1.5 rounded-xl border border-[#1A4D2E] text-[#1A4D2E] text-sm"
-                            >
-                              수정
-                            </button>
-                          )
+                          <button
+                            type="button"
+                            onClick={() => startEditOrder(order)}
+                            className="px-3 py-1.5 rounded-xl border border-[#1A4D2E] text-[#1A4D2E] text-sm"
+                          >
+                            수정
+                          </button>
                         ) : null}
                         {isPending ? (
                           <button
@@ -574,6 +630,129 @@ export function MyPage() {
           </>
         )}
       </div>
+
+      {editingOrderId !== null && editDraft ? (
+        <div className="fixed inset-0 z-50 bg-black/45 flex items-center justify-center p-4" onClick={cancelEditOrder}>
+          <div className="w-full max-w-3xl max-h-[88vh] overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="px-5 py-4 border-b border-[#E2E8D9] flex items-center justify-between">
+              <h3 className="text-lg font-bold text-[#1A4D2E]">주문 #{editingOrderId} 수정 (대기 상태)</h3>
+              <button type="button" onClick={cancelEditOrder} className="text-sm px-3 py-1.5 rounded-lg border border-[#D2DAC7]">
+                닫기
+              </button>
+            </div>
+            <div className="p-5 space-y-4 overflow-auto max-h-[calc(88vh-130px)]">
+              <div className="rounded-xl border border-[#DDE7D4] bg-[#F5FAF1] px-4 py-3">
+                <p className="text-sm font-semibold text-[#1A4D2E] mb-2">총액 비교</p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm">
+                  <div className="rounded-lg border border-[#E2E8D9] bg-white px-3 py-2">
+                    <p className="text-xs text-[#6D7568]">변경 전</p>
+                    <p className="font-bold text-[#1A4D2E]">{originalOrderTotal.toLocaleString()}원</p>
+                  </div>
+                  <div className="rounded-lg border border-[#E2E8D9] bg-white px-3 py-2">
+                    <p className="text-xs text-[#6D7568]">변경 후</p>
+                    <p className="font-bold text-[#1A4D2E]">{draftOrderTotal.toLocaleString()}원</p>
+                  </div>
+                  <div className="rounded-lg border border-[#E2E8D9] bg-white px-3 py-2">
+                    <p className="text-xs text-[#6D7568]">차액</p>
+                    <p className={`font-bold ${orderTotalDiff === 0 ? "text-[#1A4D2E]" : orderTotalDiff > 0 ? "text-red-600" : "text-blue-600"}`}>
+                      {orderTotalDiff > 0 ? "+" : ""}
+                      {orderTotalDiff.toLocaleString()}원
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-[#E2E8D9] bg-[#FBFCF9] p-4">
+                <p className="text-sm font-semibold text-[#1A4D2E] mb-3">주문 상품</p>
+                <div className="space-y-2">
+                  {editDraft.items.map((item) => (
+                    <div key={item.id} className="grid grid-cols-[1fr_auto_auto] items-center gap-2 rounded-lg border border-[#E2E8D9] bg-white px-3 py-2">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-[#1A4D2E] truncate">{item.productName}</p>
+                        <p className="text-xs text-[#6D7568]">{Number(item.unitPrice || 0).toLocaleString()}원 / 개</p>
+                      </div>
+                      <input
+                        type="number"
+                        min={1}
+                        value={item.quantity}
+                        onChange={(e) => updateDraftItemQuantity(item.id, Number(e.target.value))}
+                        className="w-20 rounded-lg border border-[#D2DAC7] px-2 py-1.5 text-sm text-right"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeDraftItem(item.id)}
+                        className="px-2.5 py-1.5 rounded-lg border border-red-200 text-red-600 text-xs hover:bg-red-50"
+                      >
+                        제거
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">수령인</label>
+                  <input
+                    value={editDraft.recipientName}
+                    onChange={(e) => setEditDraft((prev) => (prev ? { ...prev, recipientName: e.target.value } : prev))}
+                    className="w-full rounded-lg border border-[#D2DAC7] px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">연락처</label>
+                  <input
+                    value={editDraft.deliveryPhone}
+                    onChange={(e) => setEditDraft((prev) => (prev ? { ...prev, deliveryPhone: e.target.value } : prev))}
+                    className="w-full rounded-lg border border-[#D2DAC7] px-3 py-2 text-sm"
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-xs text-gray-600 mb-1">배송지</label>
+                  <input
+                    value={editDraft.deliveryAddress}
+                    onChange={(e) => setEditDraft((prev) => (prev ? { ...prev, deliveryAddress: e.target.value } : prev))}
+                    className="w-full rounded-lg border border-[#D2DAC7] px-3 py-2 text-sm"
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-xs text-gray-600 mb-1">요청사항</label>
+                  <input
+                    value={editDraft.deliveryRequest}
+                    onChange={(e) => setEditDraft((prev) => (prev ? { ...prev, deliveryRequest: e.target.value } : prev))}
+                    className="w-full rounded-lg border border-[#D2DAC7] px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+            </div>
+            <div className="px-5 py-4 border-t border-[#E2E8D9] bg-[#FBFCF9] flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => void deleteFranchiseOrder(editingOrderId)}
+                disabled={busyKey !== null}
+                className="px-3 py-1.5 rounded-xl border border-red-200 text-red-600 text-sm disabled:opacity-40"
+              >
+                주문 삭제
+              </button>
+              <button
+                type="button"
+                onClick={cancelEditOrder}
+                className="px-3 py-1.5 rounded-xl border border-[#D2DAC7] text-sm"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={() => void saveOrderMeta(editingOrderId)}
+                disabled={busyKey !== null}
+                className="px-3 py-1.5 rounded-xl bg-[#1A4D2E] text-white text-sm disabled:opacity-40"
+              >
+                저장
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

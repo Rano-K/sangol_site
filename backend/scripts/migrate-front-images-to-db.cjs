@@ -2,6 +2,8 @@ const fs = require("fs");
 const path = require("path");
 const { Pool } = require("pg");
 
+require("dotenv").config({ path: require("path").resolve(process.cwd(), ".env") });
+
 const pool = new Pool({
   host: process.env.DB_HOST || "localhost",
   port: Number(process.env.DB_PORT || 5432),
@@ -10,7 +12,33 @@ const pool = new Pool({
   password: process.env.DB_PASSWORD || "sangol_dev_change_me",
 });
 
-const sourceDir = "/Users/kms/Downloads/sangol/assets_for_front";
+const publicApiBaseUrl = String(process.env.PUBLIC_API_BASE_URL || "http://localhost:5101/api").replace(
+  /\/+$/,
+  ""
+);
+const publicOriginUrl = publicApiBaseUrl.replace(/\/api$/, "");
+const buildPublicAssetUrl = (assetPath) => `${publicOriginUrl}${assetPath.startsWith("/") ? assetPath : `/${assetPath}`}`;
+const buildCmsMediaFileUrl = (mediaId) => `${publicApiBaseUrl}/content/public/media/${mediaId}/file`;
+
+const resolveSourceDir = () => {
+  const fromEnv = process.env.CMS_ASSETS_DIR?.trim();
+  if (fromEnv) return path.resolve(fromEnv);
+
+  const seedAssets = path.resolve(process.cwd(), "seed/cms-assets");
+  if (fs.existsSync(seedAssets)) return seedAssets;
+
+  const repoAssets = path.resolve(process.cwd(), "../assets");
+  if (fs.existsSync(repoAssets)) return repoAssets;
+
+  throw new Error(
+    "[migrate-front-images] CMS_ASSETS_DIR is not set and ../assets was not found.\n" +
+      "Example (Mac):\n" +
+      '  CMS_ASSETS_DIR="/path/to/assets_for_front" node scripts/migrate-front-images-to-db.cjs\n' +
+      "Ubuntu server: use uploads rsync + npm run fix:cms-media-urls instead (see scripts/README.md)."
+  );
+};
+
+const sourceDir = resolveSourceDir();
 const uploadDir = path.resolve(process.cwd(), "uploads", "cms");
 const files = [
   "logo.png",
@@ -70,15 +98,16 @@ const uploadOrReuse = async (fileName) => {
   const destinationPath = path.join(uploadDir, storedName);
   fs.copyFileSync(sourcePath, destinationPath);
 
-  const publicUrl = `http://localhost:5001/uploads/cms/${storedName}`;
+  const publicUrl = buildPublicAssetUrl(`/uploads/cms/${storedName}`);
   const stat = fs.statSync(destinationPath);
-  await pool.query(
+  const insert = await pool.query(
     `INSERT INTO cms_media (
       file_name, original_name, mime_type, size_bytes, file_path, public_url, created_by_user_id
-    ) VALUES ($1, $2, $3, $4, $5, $6, NULL)`,
+    ) VALUES ($1, $2, $3, $4, $5, $6, NULL)
+    RETURNING id`,
     [storedName, fileName, mimeByExt[ext] || "application/octet-stream", stat.size, destinationPath, publicUrl]
   );
-  return publicUrl;
+  return buildCmsMediaFileUrl(insert.rows[0].id);
 };
 
 const main = async () => {

@@ -23,8 +23,9 @@ import { ConcertManager } from './ConcertManager';
 import { Notices } from './Notices';
 import { FaqManager } from './FaqManager';
 import { Members } from './Members';
+import { StoryManager } from './StoryManager';
 
-type Tab = 'overview' | 'orders' | 'franchises' | 'members' | 'inquiries' | 'notices' | 'faq' | 'products' | 'content' | 'concert';
+type Tab = 'overview' | 'orders' | 'franchises' | 'members' | 'inquiries' | 'notices' | 'faq' | 'products' | 'content' | 'story' | 'concert' | 'smallMusic';
 
 interface DashboardProps {
   token: string;
@@ -47,7 +48,9 @@ export function Dashboard({ token, onLogout }: DashboardProps) {
     { id: 'notices' as Tab, icon: Bell, label: '공지사항 관리' },
     { id: 'faq' as Tab, icon: HelpCircle, label: 'FAQ 관리' },
     { id: 'content' as Tab, icon: Settings, label: '프론트 콘텐츠' },
-    { id: 'concert' as Tab, icon: Music2, label: '작은 음악회' },
+    { id: 'story' as Tab, icon: MessageSquare, label: '산골소통방' },
+    { id: 'concert' as Tab, icon: Music2, label: '산골이야기' },
+    { id: 'smallMusic' as Tab, icon: Music2, label: '작은음악회' },
   ];
 
   const renderContent = () => {
@@ -70,7 +73,11 @@ export function Dashboard({ token, onLogout }: DashboardProps) {
         return <FaqManager token={token} />;
       case 'content':
         return <ContentManager token={token} />;
+      case 'story':
+        return <StoryManager token={token} />;
       case 'concert':
+        return <ConcertManager token={token} />;
+      case 'smallMusic':
         return <ConcertManager token={token} />;
       default:
         return <Overview token={token} onNavigate={setActiveTab} />;

@@ -13,7 +13,8 @@ const COMPANY_QUICK_LINKS = [
 export function CompanyHistory() {
   const { data } = useCmsPage("company-history");
   const sections = (data?.sections ?? {}) as Record<string, unknown>;
-  const header = (sections.header ?? {}) as Record<string, unknown>;
+  const header = (sections.header ?? {}) as Record<string, string>;
+  const body = (sections.body ?? {}) as Record<string, string>;
   const mediaImage = getCmsMediaFileUrl(sections.historyImageMediaId ? Number(sections.historyImageMediaId) : null);
   const historyImage = mediaImage || "";
   const headerBannerImage =
@@ -35,18 +36,18 @@ export function CompanyHistory() {
         
         <div className="relative z-10 text-center text-white px-6">
           <Leaf className="w-8 h-8 mx-auto mb-4 opacity-80" />
-          <h1 className="text-3xl md:text-5xl font-extrabold tracking-tight mb-4">연혁</h1>
-          <p className="text-[#E8DFCA] text-lg">자연과 함께 걸어온 (주)산골의 발자취입니다.</p>
+          <h1 className="text-3xl md:text-5xl font-extrabold tracking-tight mb-4">{header.title || "연혁"}</h1>
+          <p className="text-[#E8DFCA] text-lg">{header.subtitle || "자연과 함께 걸어온 (주)산골의 발자취입니다."}</p>
         </div>
       </div>
       <SectionQuickLinks items={COMPANY_QUICK_LINKS} />
 
       {/* Main Content Area */}
-      <div className="max-w-4xl mx-auto px-6 py-20 md:py-32 w-full flex flex-col items-center">
+      <div className="site-container site-container--narrow py-20 md:py-32 w-full flex flex-col items-center">
         <div className="text-center mb-16">
-          <h2 className="text-3xl font-extrabold text-[#1A4D2E] mb-4">농업회사법인 (주)산골 연혁</h2>
+          <h2 className="text-3xl font-extrabold text-[#1A4D2E] mb-4">{body.title || "농업회사법인 (주)산골 연혁"}</h2>
           <p className="text-[#4F6F52] text-lg">
-            2017년 설립부터 현재까지, 신뢰와 정직으로 성장해온 기록입니다.
+            {body.subtitle || "2017년 설립부터 현재까지, 신뢰와 정직으로 성장해온 기록입니다."}
           </p>
         </div>
         

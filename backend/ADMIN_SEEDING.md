@@ -65,6 +65,29 @@ ALLOW_PROD_SEED_ADMIN=true npm --prefix backend run seed:dev-admin
 - 운영에서는 `seed:dev-admin`을 자동 실행하지 않도록 배포 파이프라인을 분리하세요.
 - 운영 DB에 admin 계정이 없으면 `/api/auth/login` 로그인은 실패합니다(이는 의도된 안전장치입니다).
 
+## 6) CMS·공지·FAQ 콘텐츠 시드 (관리자 화면과 동기화)
+
+프론트에 하드코딩되어 있던 문구를 `cms_pages` 등 DB에 반영합니다.
+
+```bash
+npm --prefix backend run seed:cms-content
+```
+
+포함 범위:
+- `site-layout` (상단 공지, 푸터, 로그인 라벨)
+- `home` (히어로, 신뢰배지, 핵심역량 카드, 브랜드 스토리, 고객센터 번호)
+- 회사/사업 소개 페이지 (`company-*`, `business-*`)
+- `support` (고객센터 헤더, 상담시간, 개인정보 문구, FAQ 5건)
+- `order` (입금 안내 문구)
+- 공지사항·오시는길 가맹점: **DB가 비어 있을 때만** 샘플 삽입
+
+이미지(mediaId) 연결은 별도:
+
+```bash
+node backend/scripts/migrate-front-images-to-db.cjs
+node backend/scripts/enforce-media-id-references.cjs
+```
+
 ## 관련 문서
 - [프론트 회사/연락처/푸터 데이터 소스](../FRONTEND_COMPANY_DATA_SOURCES.md)
 

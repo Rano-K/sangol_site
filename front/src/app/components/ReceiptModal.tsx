@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { CheckCircle2, X } from "lucide-react";
+import { useCmsPage } from "../hooks/useCmsPage";
 
 type OrderedItem = {
   code: string;
@@ -18,6 +19,21 @@ interface ReceiptModalProps {
 }
 
 export function ReceiptModal({ items, total, orderId, onClose, onConfirm }: ReceiptModalProps) {
+  const { data: orderCms } = useCmsPage("order");
+  const paymentSection =
+    orderCms?.sections && typeof orderCms.sections === "object"
+      ? ((orderCms.sections as Record<string, unknown>).payment as Record<string, unknown> | undefined)
+      : undefined;
+  const depositAccountName =
+    (typeof paymentSection?.accountName === "string" && paymentSection.accountName.trim()) ||
+    ((import.meta.env["VITE_B2B_DEPOSIT_ACCOUNT_NAME"] as string | undefined) ?? "");
+  const depositAccountNumber =
+    (typeof paymentSection?.accountNumber === "string" && paymentSection.accountNumber.trim()) ||
+    ((import.meta.env["VITE_B2B_DEPOSIT_ACCOUNT_NUMBER"] as string | undefined) ?? "");
+  const requiredNotice =
+    (typeof paymentSection?.requiredNotice === "string" && paymentSection.requiredNotice.trim()) ||
+    "※ 반드시 입금 후 주문을 확정해 주세요. 미입금 시 출고가 진행되지 않습니다.";
+
   const date = new Date().toLocaleDateString('ko-KR', {
     year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit'
   });
@@ -86,6 +102,14 @@ export function ReceiptModal({ items, total, orderId, onClose, onConfirm }: Rece
 
         {/* Footer */}
         <div className="bg-white p-6 border-t border-gray-200 border-dashed">
+          <div className="mb-4 rounded-lg border border-[#E6ECE1] bg-[#F7FAF5] p-3">
+            <p className="text-xs font-semibold text-[#6A756B]">입금 계좌 안내 (임시)</p>
+            <p className="mt-1 text-sm font-bold text-[#1A4D2E]">{depositAccountName || "계좌명을 관리자에서 설정해 주세요."}</p>
+            <p className="text-sm font-semibold text-[#1A4D2E]">{depositAccountNumber || "계좌번호를 관리자에서 설정해 주세요."}</p>
+            <p className="mt-2 text-sm font-extrabold text-red-600">
+              {requiredNotice}
+            </p>
+          </div>
           <div className="flex justify-between items-end mb-6">
             <span className="text-lg font-bold text-gray-600">주문 총 금액</span>
             <span className="text-3xl font-extrabold text-[#1A4D2E]">{total.toLocaleString()}원</span>

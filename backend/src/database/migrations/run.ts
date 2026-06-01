@@ -41,6 +41,27 @@ const getInitialSchemaPath = async (): Promise<string> => {
   ]);
 };
 
+const getMigrationsDirectory = async (): Promise<string> => {
+  const currentDir = path.dirname(fileURLToPath(import.meta.url));
+  return findFirstExistingPath([
+    path.resolve(process.cwd(), 'database/postgres/migrations'),
+    path.resolve(process.cwd(), 'backend/database/postgres/migrations'),
+    path.resolve(currentDir, '../../../../database/postgres/migrations'),
+  ]);
+};
+
+const listSqlFileMigrations = async (): Promise<Migration[]> => {
+  const migrationsDir = await getMigrationsDirectory();
+  const entries = await fs.readdir(migrationsDir);
+  return entries
+    .filter((name) => name.endsWith('.sql'))
+    .sort()
+    .map((name) => ({
+      id: name.replace(/\.sql$/i, ''),
+      filePath: path.join(migrationsDir, name),
+    }));
+};
+
 const sha256 = (value: string): string =>
   crypto.createHash('sha256').update(value).digest('hex');
 
@@ -60,7 +81,12 @@ const ensureMigrationTable = async (client: PoolClient): Promise<void> => {
   `);
 };
 
-const hasAppliedMigration = async (client: PoolClient, migration: Migration, checksum: string): Promise<boolean> => {
+const hasAppliedMigration = async (
+  client: PoolClient,
+  migration: Migration,
+  checksum: string,
+  options?: { allowChecksumRefreshForBaseline?: boolean }
+): Promise<boolean> => {
   const { rows } = await client.query<{ checksum: string }>(
     'SELECT checksum FROM schema_migrations WHERE id = $1',
     [migration.id]
@@ -68,6 +94,11 @@ const hasAppliedMigration = async (client: PoolClient, migration: Migration, che
 
   if (rows.length === 0) return false;
   if (rows[0].checksum !== checksum) {
+    if (options?.allowChecksumRefreshForBaseline && (await hasBaselineSchema(client))) {
+      await client.query('UPDATE schema_migrations SET checksum = $1 WHERE id = $2', [checksum, migration.id]);
+      console.log(`[MIGRATION] ${migration.id} checksum refreshed (init SQL changed, DB baseline kept).`);
+      return true;
+    }
     throw new Error(`[MIGRATION] ${migration.id} checksum changed after it was applied.`);
   }
   return true;
@@ -100,11 +131,11 @@ const markMigrationApplied = async (client: PoolClient, migration: Migration, ch
   );
 };
 
-const runMigration = async (client: PoolClient, migration: Migration): Promise<void> => {
+const runInitialSchemaMigration = async (client: PoolClient, migration: Migration): Promise<void> => {
   const rawSql = await fs.readFile(migration.filePath, 'utf8');
   const checksum = sha256(rawSql);
 
-  if (await hasAppliedMigration(client, migration, checksum)) {
+  if (await hasAppliedMigration(client, migration, checksum, { allowChecksumRefreshForBaseline: true })) {
     console.log(`[MIGRATION] ${migration.id} already applied.`);
     return;
   }
@@ -127,19 +158,40 @@ const runMigration = async (client: PoolClient, migration: Migration): Promise<v
   }
 };
 
+const runSqlFileMigration = async (client: PoolClient, migration: Migration): Promise<void> => {
+  const rawSql = await fs.readFile(migration.filePath, 'utf8');
+  const checksum = sha256(rawSql);
+
+  if (await hasAppliedMigration(client, migration, checksum)) {
+    console.log(`[MIGRATION] ${migration.id} already applied.`);
+    return;
+  }
+
+  await client.query('BEGIN');
+  try {
+    await client.query(stripOuterTransaction(rawSql));
+    await markMigrationApplied(client, migration, checksum);
+    await client.query('COMMIT');
+    console.log(`[MIGRATION] ${migration.id} applied.`);
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  }
+};
+
 const main = async (): Promise<void> => {
-  const migrations: Migration[] = [
-    {
-      id: '001_initial_postgres_schema',
-      filePath: await getInitialSchemaPath(),
-    },
-  ];
+  const initialMigration: Migration = {
+    id: '001_initial_postgres_schema',
+    filePath: await getInitialSchemaPath(),
+  };
+  const sqlMigrations = await listSqlFileMigrations();
 
   const client = await pool.connect();
   try {
     await ensureMigrationTable(client);
-    for (const migration of migrations) {
-      await runMigration(client, migration);
+    await runInitialSchemaMigration(client, initialMigration);
+    for (const migration of sqlMigrations) {
+      await runSqlFileMigration(client, migration);
     }
     console.log('[MIGRATION] Complete.');
   } finally {
@@ -148,8 +200,7 @@ const main = async (): Promise<void> => {
   }
 };
 
-main().catch(async (error: Error) => {
+main().catch((error: Error) => {
   console.error('[MIGRATION] Failed:', error.message);
-  await pool.end();
   process.exit(1);
 });

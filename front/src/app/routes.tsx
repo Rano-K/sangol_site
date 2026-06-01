@@ -46,6 +46,7 @@ export const router = createBrowserRouter([
       { path: "support/:tab", Component: Support },
       { path: "community/story", Component: CommunityStory },
       { path: "community/concert", Component: CommunityConcert },
+      { path: "community/small-music", Component: CommunityConcert },
       { path: "community/*", Component: Placeholder },
       { path: "*", Component: Placeholder },
     ],

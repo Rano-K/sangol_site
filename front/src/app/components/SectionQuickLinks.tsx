@@ -14,7 +14,7 @@ export function SectionQuickLinks({ items }: SectionQuickLinksProps) {
 
   return (
     <div className="bg-white border-b border-[#E5E7DF] sticky top-20 z-30">
-      <div className="max-w-7xl mx-auto px-6">
+      <div className="site-container">
         <nav className="flex items-center justify-center overflow-x-auto whitespace-nowrap">
           {items.map((item) => {
             const isActive = location.pathname === item.to;

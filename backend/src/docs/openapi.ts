@@ -570,7 +570,34 @@ export const openApiSpec = {
     },
     "/api/admin/location-franchises": {
       get: { tags: ["Admin"], summary: "가맹점(위치) 목록 조회", security: [{ bearerAuth: [] }], responses: { "200": { description: "조회 성공 (franchise_key/member_link_key 포함)" } } },
-      post: { tags: ["Admin"], summary: "가맹점(위치) 생성", security: [{ bearerAuth: [] }], responses: { "201": { description: "생성 성공" } } },
+      post: {
+        tags: ["Admin"],
+        summary: "가맹점(위치) 생성",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["storeType", "name", "address"],
+                properties: {
+                  franchiseKey: { type: "string", nullable: true, maxLength: 32, example: "FRA-000123" },
+                  storeType: { type: "string", example: "가맹점" },
+                  name: { type: "string", example: "산골 강남점" },
+                  storePhone: { type: "string", nullable: true },
+                  ownerName: { type: "string", nullable: true },
+                  ownerPhone: { type: "string", nullable: true },
+                  address: { type: "string" },
+                  displayOrder: { type: "integer", minimum: 0, default: 0 },
+                  isActive: { type: "boolean", default: true },
+                },
+              },
+            },
+          },
+        },
+        responses: { "201": { description: "생성 성공" }, "409": { description: "franchise_key 중복" } },
+      },
     },
     "/api/admin/location-franchises/{id}": {
       patch: {
@@ -578,7 +605,28 @@ export const openApiSpec = {
         summary: "가맹점(위치) 수정",
         security: [{ bearerAuth: [] }],
         parameters: [{ in: "path", name: "id", required: true, schema: { type: "integer", minimum: 1 } }],
-        responses: { "200": { description: "수정 성공" } },
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  franchiseKey: { type: "string", nullable: true, maxLength: 32, example: "FRA-000123" },
+                  storeType: { type: "string" },
+                  name: { type: "string" },
+                  storePhone: { type: "string", nullable: true },
+                  ownerName: { type: "string", nullable: true },
+                  ownerPhone: { type: "string", nullable: true },
+                  address: { type: "string" },
+                  displayOrder: { type: "integer", minimum: 0 },
+                  isActive: { type: "boolean" },
+                },
+              },
+            },
+          },
+        },
+        responses: { "200": { description: "수정 성공" }, "409": { description: "franchise_key 중복" } },
       },
       delete: {
         tags: ["Admin"],
@@ -593,6 +641,22 @@ export const openApiSpec = {
     },
     "/api/admin/orders": {
       get: { tags: ["Admin"], summary: "관리자 주문 목록 조회", security: [{ bearerAuth: [] }], responses: { "200": { description: "조회 성공" } } },
+    },
+    "/api/admin/orders/{id}": {
+      patch: {
+        tags: ["Admin"],
+        summary: "관리자 주문 수정",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ in: "path", name: "id", required: true, schema: { type: "integer", minimum: 1 } }],
+        responses: { "200": { description: "수정 성공" } },
+      },
+      delete: {
+        tags: ["Admin"],
+        summary: "관리자 주문 삭제",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ in: "path", name: "id", required: true, schema: { type: "integer", minimum: 1 } }],
+        responses: { "200": { description: "삭제 성공" } },
+      },
     },
     "/api/admin/orders/{id}/status": {
       patch: {

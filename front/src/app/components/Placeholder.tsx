@@ -16,12 +16,14 @@ export function Placeholder() {
     '/business/farm': '농장소개',
     '/products/forest': '임산물',
     '/products/agriculture': '농산물',
-    '/products/manufactured': '제품',
+    '/products/manufactured': '가공식품',
+    '/products/wip': '재공품',
     '/support/notice': '공지사항',
     '/support/inquiry': '온라인문의',
     '/support/faq': 'FAQ',
-    '/community/story': '산골이야기',
-    '/community/concert': '작은음악회',
+    '/community/story': '산골소통방',
+    '/community/concert': '산골이야기',
+    '/community/small-music': '작은음악회',
   };
 
   const title = pathMap[location.pathname] || '준비 중인 페이지';

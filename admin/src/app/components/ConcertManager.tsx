@@ -35,7 +35,7 @@ export function ConcertManager({ token }: ConcertManagerProps) {
   const loadVideos = async () => {
     const response = await fetch(`${apiBaseUrl}/community/admin/concert-videos`, { headers });
     const data = await response.json();
-    if (!response.ok) throw new Error(data?.error || '목록 조회 실패');
+      if (!response.ok) throw new Error(data?.error || '목록 조회 실패');
     setVideos(data);
   };
 
@@ -119,8 +119,8 @@ export function ConcertManager({ token }: ConcertManagerProps) {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-gray-800">작은 음악회 관리</h2>
-        <p className="text-sm text-gray-500 mt-1">유튜브 링크를 등록/수정/삭제하면 프론트 작은 음악회에 즉시 반영됩니다.</p>
+        <h2 className="text-2xl font-bold text-gray-800">산골이야기 관리</h2>
+        <p className="text-sm text-gray-500 mt-1">유튜브 링크를 등록/수정/삭제하면 프론트 산골이야기에 즉시 반영됩니다.</p>
       </div>
 
       {message && <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg">{message}</div>}

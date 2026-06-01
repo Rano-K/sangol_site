@@ -1,8 +1,15 @@
 import express, { Request, Response } from 'express';
 import pool from '../config/database';
+import { canViewWipProducts, optionalAuthenticateToken } from '../middleware/auth';
 import { buildPublicApiUrl, publicApiBaseUrl } from '../utils/publicUrls';
 
 const router = express.Router();
+const WIP_CATEGORY_NAME = '재공품';
+
+router.use(optionalAuthenticateToken);
+
+const wipVisibilitySql = (tableAlias: string, paramIndex: number): string =>
+  ` AND (${tableAlias}.category <> $${paramIndex} OR $${paramIndex + 1}::boolean IS TRUE)`;
 
 const ensureProductColumnsReady = async (): Promise<void> => {
   await pool.query('ALTER TABLE products ADD COLUMN IF NOT EXISTS stock_quantity INTEGER NOT NULL DEFAULT 0;');
@@ -48,19 +55,22 @@ router.get('/', async (req: Request, res: Response) => {
     const limit = hasPagination ? Math.max(1, Math.min(100, Number(rawLimit))) : null;
     const offset = hasPagination ? Math.max(0, Number(rawOffset)) : null;
 
+    const includeWip = canViewWipProducts(req);
+
     if (hasPagination && limit !== null && offset !== null) {
       const countResult = await pool.query(
         `SELECT COUNT(*)::int AS total
-         FROM products
-         WHERE is_active = TRUE
+         FROM products p
+         WHERE p.is_active = TRUE
+           ${wipVisibilitySql('p', 2)}
            AND (
              $1::text IS NULL
-             OR product_code ILIKE $1
-             OR name ILIKE $1
-             OR category ILIKE $1
-             OR COALESCE(description, '') ILIKE $1
+             OR p.product_code ILIKE $1
+             OR p.name ILIKE $1
+             OR p.category ILIKE $1
+             OR COALESCE(p.description, '') ILIKE $1
            )`,
-        [searchQ]
+        [searchQ, WIP_CATEGORY_NAME, includeWip]
       );
       const total = Number(countResult.rows[0]?.total || 0);
 
@@ -85,18 +95,19 @@ router.get('/', async (req: Request, res: Response) => {
            ) AS image_items
          FROM products p
          LEFT JOIN product_images pi ON pi.product_id = p.id
-         WHERE is_active = TRUE
+         WHERE p.is_active = TRUE
+           ${wipVisibilitySql('p', 5)}
            AND (
              $1::text IS NULL
-             OR product_code ILIKE $1
-             OR name ILIKE $1
-             OR category ILIKE $1
-             OR COALESCE(description, '') ILIKE $1
+             OR p.product_code ILIKE $1
+             OR p.name ILIKE $1
+             OR p.category ILIKE $1
+             OR COALESCE(p.description, '') ILIKE $1
            )
          GROUP BY p.id
          ORDER BY p.category, p.name
          LIMIT $2 OFFSET $3`,
-        [searchQ, limit, offset, publicApiBaseUrl]
+        [searchQ, limit, offset, publicApiBaseUrl, WIP_CATEGORY_NAME, includeWip]
       );
 
       const items = rows.map((row: any) => ({
@@ -136,17 +147,18 @@ router.get('/', async (req: Request, res: Response) => {
          ) AS image_items
        FROM products p
        LEFT JOIN product_images pi ON pi.product_id = p.id
-       WHERE is_active = TRUE
+       WHERE p.is_active = TRUE
+         ${wipVisibilitySql('p', 3)}
          AND (
            $1::text IS NULL
-           OR product_code ILIKE $1
-           OR name ILIKE $1
-           OR category ILIKE $1
-           OR COALESCE(description, '') ILIKE $1
+           OR p.product_code ILIKE $1
+           OR p.name ILIKE $1
+           OR p.category ILIKE $1
+           OR COALESCE(p.description, '') ILIKE $1
          )
        GROUP BY p.id
        ORDER BY p.category, p.name`,
-      [searchQ, publicApiBaseUrl]
+      [searchQ, publicApiBaseUrl, WIP_CATEGORY_NAME, includeWip]
     );
     res.json(
       rows.map((row: any) => ({
@@ -164,6 +176,11 @@ router.get('/', async (req: Request, res: Response) => {
 // 카테고리별 상품 조회
 router.get('/category/:category', async (req: Request, res: Response) => {
   const { category } = req.params;
+
+  if (category === WIP_CATEGORY_NAME && !canViewWipProducts(req)) {
+    res.json([]);
+    return;
+  }
 
   try {
     await ensureProductColumnsReady();
@@ -273,6 +290,11 @@ router.get('/:id', async (req: Request, res: Response) => {
     );
 
     if (rows.length === 0) {
+      res.status(404).json({ error: '상품을 찾을 수 없습니다.' });
+      return;
+    }
+
+    if (rows[0].category === WIP_CATEGORY_NAME && !canViewWipProducts(req)) {
       res.status(404).json({ error: '상품을 찾을 수 없습니다.' });
       return;
     }

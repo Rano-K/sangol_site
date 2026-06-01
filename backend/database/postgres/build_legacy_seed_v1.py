@@ -1,10 +1,35 @@
 #!/usr/bin/env python3
+import os
 import re
+import sys
 from pathlib import Path
 
+_SCRIPT_DIR = Path(__file__).resolve().parent
 
-DUMP_PATH = Path("/Users/kms/Downloads/sangol/SANGOL_PHP/ikor250911t-20260409.dump")
-OUT_SQL_PATH = Path("/Users/kms/Downloads/sangol/backend/database/postgres/legacy_seed_v1.sql")
+
+def _require_path(env_key: str, description: str) -> Path:
+    raw = os.environ.get(env_key, "").strip()
+    if not raw:
+        print(
+            f"[build_legacy_seed_v1] {env_key} is required.\n"
+            f"  {description}\n"
+            "  This script is for one-time local migration from a PHP dump — not used on Ubuntu deploy.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    return Path(raw).expanduser().resolve()
+
+
+DUMP_PATH = _require_path(
+    "LEGACY_DUMP_PATH",
+    "Example: LEGACY_DUMP_PATH=/path/to/ikor250911t-20260409.dump",
+)
+OUT_SQL_PATH = Path(
+    os.environ.get(
+        "LEGACY_SEED_OUT_PATH",
+        str(_SCRIPT_DIR / "legacy_seed_v1.sql"),
+    ).strip()
+).expanduser().resolve()
 
 PRODUCT_TABLE_CATEGORY = {
     "g5_write_product1": "임산물",

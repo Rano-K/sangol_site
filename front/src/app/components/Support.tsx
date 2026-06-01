@@ -290,7 +290,7 @@ function InquiryForm({ privacyText }: { privacyText: string }) {
       </form>
 
       {toastVisible && toastMessage ? (
-        <div className="fixed bottom-6 right-6 z-[70] transition-opacity duration-200">
+        <div className="fixed left-1/2 -translate-x-1/2 bottom-20 z-[70] transition-opacity duration-200">
           <div
             className={`max-w-sm rounded-xl border px-4 py-3 shadow-xl backdrop-blur bg-white/95 ${
               toastVariant === "error" ? "border-red-200" : "border-[#DDE7D4]"
@@ -430,23 +430,23 @@ export function Support() {
   return (
     <div className="flex-1 bg-[#FAFAF7] flex flex-col min-h-screen">
        {/* Header Banner */}
-      <div className="bg-[#1A4D2E] text-white py-16 px-6 relative overflow-hidden">
+      <div className="bg-[#1A4D2E] text-white py-12 md:py-14 relative overflow-hidden">
         <div
           className="absolute inset-0 opacity-15 bg-cover bg-center mix-blend-overlay"
           style={{
             backgroundImage: header.bannerImage ? `url('${header.bannerImage}')` : 'none',
           }}
         />
-        <div className="max-w-4xl mx-auto text-center relative z-10">
+        <div className="site-container text-center relative z-10">
           <h1 className="text-3xl md:text-5xl font-extrabold tracking-tight mb-4">{header.title || "고객센터"}</h1>
           <p className="text-[#E8DFCA] text-lg font-medium">{header.subtitle || "무엇을 도와드릴까요? 산골의 고객센터입니다."}</p>
         </div>
       </div>
 
-      <div className="max-w-6xl mx-auto px-6 py-12 w-full flex-1 flex flex-col md:flex-row gap-10">
+      <div className="site-container py-8 md:py-10 w-full flex-1 flex flex-col lg:flex-row gap-6 lg:gap-8">
         
         {/* Sidebar Navigation */}
-        <aside className="w-full md:w-72 flex-shrink-0 flex flex-col gap-6">
+        <aside className="w-full lg:w-64 xl:w-72 flex-shrink-0 flex flex-col gap-4 lg:gap-6">
           <div className="bg-white rounded-2xl shadow-sm border border-[#E8DFCA] overflow-hidden sticky top-28 z-10">
             <div className="p-6 bg-[#4F6F52] text-white">
               <h2 className="text-xl font-bold">고객지원</h2>
@@ -488,7 +488,7 @@ export function Support() {
         </aside>
 
         {/* Main Content Area */}
-        <main className="flex-1 bg-white rounded-2xl shadow-sm border border-[#E8DFCA] p-8 md:p-12 min-h-[600px]">
+        <main className="flex-1 min-w-0 bg-white rounded-2xl shadow-sm border border-[#E8DFCA] p-5 sm:p-6 md:p-8 min-h-[600px]">
           {activeTab === 'notice' && <NoticeList notices={notices} />}
           {activeTab === 'inquiry' && <InquiryForm privacyText={privacyText} />}
           {activeTab === 'faq' && <FaqList faqs={faqs} />}

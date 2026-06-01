@@ -13,7 +13,8 @@ const COMPANY_QUICK_LINKS = [
 export function CompanyAwards() {
   const { data } = useCmsPage("company-awards");
   const sections = (data?.sections ?? {}) as Record<string, unknown>;
-  const header = (sections.header ?? {}) as Record<string, unknown>;
+  const header = (sections.header ?? {}) as Record<string, string>;
+  const body = (sections.body ?? {}) as Record<string, string>;
   const certMediaIds = Array.isArray(sections.certMediaIds) ? sections.certMediaIds : [];
   const resolveCertMediaUrl = (val: unknown): string => {
     const num = typeof val === "string" || typeof val === "number" ? Number(val) : NaN;
@@ -44,18 +45,18 @@ export function CompanyAwards() {
         
         <div className="relative z-10 text-center text-white px-6">
           <Award className="w-8 h-8 mx-auto mb-4 opacity-80" />
-          <h1 className="text-3xl md:text-5xl font-extrabold tracking-tight mb-4">수상 및 인증</h1>
-          <p className="text-[#E8DFCA] text-lg">엄격한 기준을 통과한 산골의 자부심입니다.</p>
+          <h1 className="text-3xl md:text-5xl font-extrabold tracking-tight mb-4">{header.title || "수상 및 인증"}</h1>
+          <p className="text-[#E8DFCA] text-lg">{header.subtitle || "엄격한 기준을 통과한 산골의 자부심입니다."}</p>
         </div>
       </div>
       <SectionQuickLinks items={COMPANY_QUICK_LINKS} />
 
       {/* Main Content Area */}
-      <div className="max-w-5xl mx-auto px-6 py-20 md:py-32 w-full flex flex-col items-center">
+      <div className="site-container py-16 md:py-24 w-full flex flex-col items-center">
         <div className="text-center mb-16">
-          <h2 className="text-3xl font-extrabold text-[#1A4D2E] mb-4">국가가 인정한 프리미엄 임산물</h2>
+          <h2 className="text-3xl font-extrabold text-[#1A4D2E] mb-4">{body.title || "국가가 인정한 프리미엄 임산물"}</h2>
           <p className="text-[#4F6F52] text-lg">
-            청정 숲에서 자란 우수한 품질을 증명하는 인증 내역과 혜택 안내입니다.
+            {body.subtitle || "청정 숲에서 자란 우수한 품질을 증명하는 인증 내역과 혜택 안내입니다."}
           </p>
         </div>
         

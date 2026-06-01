@@ -91,7 +91,8 @@ INSERT INTO product_categories (name, category_key, is_active)
 VALUES
   ('임산물', 'FP', TRUE),
   ('농산물', 'AG', TRUE),
-  ('제품(가공식품)', 'PR', TRUE)
+  ('제품(가공식품)', 'PR', TRUE),
+  ('재공품', 'WIP', TRUE)
 ON CONFLICT (name) DO NOTHING;
 
 -- ---------------------------------------------------------------------------

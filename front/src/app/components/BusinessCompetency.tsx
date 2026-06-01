@@ -78,7 +78,7 @@ export function BusinessCompetency() {
       </div>
       <SectionQuickLinks items={BUSINESS_QUICK_LINKS} />
 
-      <div className="max-w-7xl mx-auto px-6 py-20 md:py-32 w-full flex flex-col gap-16">
+      <div className="site-container py-20 md:py-32 w-full flex flex-col gap-16">
         
         <div className="text-center max-w-3xl mx-auto mb-8">
           <h2 className="text-3xl md:text-4xl font-bold text-[#1A4D2E] mb-6 leading-tight">
@@ -106,12 +106,12 @@ export function BusinessCompetency() {
               key={index}
               className="bg-white rounded-[2rem] overflow-hidden shadow-sm border border-[#E8DFCA]/60 hover:shadow-xl transition-all duration-300 group flex flex-col sm:flex-row h-full"
             >
-              {/* Image Section */}
-              <div className="relative w-full sm:w-2/5 md:w-1/2 h-64 sm:h-auto overflow-hidden">
+              {/* Image Section — 카드별 동일 크기 (01·02 기준) */}
+              <div className="relative w-full sm:w-[42%] shrink-0 h-56 sm:h-64 lg:h-72 overflow-hidden bg-[#E8DFCA]">
                 <ImageWithFallback 
                   src={comp.imageUrl} 
                   alt={comp.title.replace('\n', ' ')}
-                  className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                  className="absolute inset-0 w-full h-full object-cover object-center transition-transform duration-700 group-hover:scale-105"
                 />
                 <div className="absolute inset-0 bg-[#1A4D2E]/10 group-hover:bg-transparent transition-colors duration-300" />
                 
@@ -122,7 +122,7 @@ export function BusinessCompetency() {
               </div>
               
               {/* Content Section */}
-              <div className="p-8 sm:p-10 w-full sm:w-3/5 md:w-1/2 flex flex-col justify-center bg-white relative">
+              <div className="p-8 sm:p-10 flex-1 min-w-0 flex flex-col justify-center bg-white relative">
                 <div className="w-12 h-12 rounded-xl bg-[#FAFAF7] flex items-center justify-center mb-6 border border-[#E8DFCA]">
                   {comp.icon}
                 </div>

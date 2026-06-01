@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { MessageCircle, X } from "lucide-react";
 import { API_BASE_URL } from "../lib/apiBaseUrl";
+import { getCommunityPostListTitle } from "../lib/communityPost";
 
 type StoryPost = {
   id: number;
@@ -51,7 +52,7 @@ export function CommunityStory() {
     try {
       const response = await fetch(`${apiBaseUrl}/community/posts`);
       const data = await response.json();
-      if (!response.ok) throw new Error(data?.error || "산골이야기 목록 조회 실패");
+      if (!response.ok) throw new Error(data?.error || "산골소통방 목록 조회 실패");
       setPosts(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "오류가 발생했습니다.");
@@ -221,9 +222,9 @@ export function CommunityStory() {
 
   return (
     <div className="flex-1 bg-[#FAFAF7] min-h-screen">
-      <div className="max-w-6xl mx-auto px-6 py-14 space-y-10">
+      <div className="site-container site-container--narrow py-14 space-y-10">
         <div className="text-center">
-          <h1 className="text-4xl md:text-5xl font-extrabold text-[#1A4D2E]">산골이야기</h1>
+          <h1 className="text-4xl md:text-5xl font-extrabold text-[#1A4D2E]">산골소통방</h1>
           <p className="text-[#4F6F52] mt-2">일반 글 작성과 댓글 소통이 가능한 커뮤니티입니다.</p>
         </div>
 
@@ -309,7 +310,7 @@ export function CommunityStory() {
                 >
                   <p className="font-semibold text-[#1A4D2E]">
                     {post.is_secret ? "🔒 " : ""}
-                    {post.title}
+                    {getCommunityPostListTitle(post)}
                   </p>
                   <p className="text-sm text-gray-500 mt-1">
                     작성자: {post.author_name} | 조회수: {post.views} | {new Date(post.created_at).toLocaleString()}
@@ -451,7 +452,7 @@ export function CommunityStory() {
       ) : null}
 
       {toastVisible && toastMessage ? (
-        <div className="fixed bottom-6 right-6 z-[70] transition-opacity duration-200">
+        <div className="fixed left-1/2 -translate-x-1/2 bottom-20 z-[70] transition-opacity duration-200">
           <div
             className={`max-w-sm rounded-xl border px-4 py-3 shadow-xl backdrop-blur bg-white/95 ${
               toastVariant === "error" ? "border-red-200" : "border-[#DDE7D4]"

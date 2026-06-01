@@ -1,6 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
 import { RefreshCw, X } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { API_BASE_URL } from '../lib/apiBaseUrl';
+import { buildFranchiseMonthlyReport, getMonthColumnHeaders } from '../lib/franchiseMonthlyOrderReport';
+import {
+  downloadMultiOrderTransactionStatements,
+  downloadTransactionStatement,
+  type TransactionStatementOrder,
+} from '../lib/transactionStatementExcel';
+import { FranchiseMonthlyOrderView } from './FranchiseMonthlyOrderView';
+
+type OrdersViewMode = 'list' | 'monthly';
 
 const PAGE_SIZE_OPTIONS = [10, 20, 30, 40, 50] as const;
 
@@ -26,6 +36,7 @@ type OrderRecord = {
   franchiseContactPerson: string | null;
   franchisePhone: string | null;
   franchiseAddress: string | null;
+  franchiseBusinessNumber: string | null;
   deliveryAddress: string | null;
   deliveryPhone: string | null;
   recipientName: string | null;
@@ -39,6 +50,14 @@ type OrderRecord = {
 interface OrdersProps {
   token: string;
 }
+
+type OrderEditDraft = {
+  deliveryAddress: string;
+  deliveryPhone: string;
+  recipientName: string;
+  deliveryRequest: string;
+  items: Array<{ productId: number; productName: string; quantity: number; unitPrice: number }>;
+};
 
 const STATUS_META: Record<OrderStatus, { label: string; className: string }> = {
   pending: { label: '대기', className: 'bg-yellow-100 text-yellow-700' },
@@ -60,6 +79,7 @@ const normalizeOrder = (row: any): OrderRecord => ({
   franchiseContactPerson: row.franchise_contact_person ?? null,
   franchisePhone: row.franchise_phone ?? null,
   franchiseAddress: row.franchise_address ?? null,
+  franchiseBusinessNumber: row.franchise_business_number ?? null,
   deliveryAddress: row.delivery_address ?? null,
   deliveryPhone: row.delivery_phone ?? null,
   recipientName: row.recipient_name ?? null,
@@ -91,6 +111,13 @@ const formatDate = (value: string): string =>
     minute: '2-digit',
   }).format(new Date(value));
 
+const sanitizeSheetName = (name: string): string =>
+  name
+    .replace(/[\\/*?:[\]]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 31) || '가맹점';
+
 export function Orders({ token }: OrdersProps) {
   const apiBaseUrl = useMemo(() => API_BASE_URL, []);
   const [orders, setOrders] = useState<OrderRecord[]>([]);
@@ -101,8 +128,11 @@ export function Orders({ token }: OrdersProps) {
   const [error, setError] = useState('');
   const [updatingOrderId, setUpdatingOrderId] = useState<number | null>(null);
   const [searchKeyword, setSearchKeyword] = useState('');
-  const [channelFilter, setChannelFilter] = useState<'all' | 'b2b' | 'b2c'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | OrderStatus>('all');
+  const [franchiseFilter, setFranchiseFilter] = useState<'all' | string>('all');
+  const [editDraft, setEditDraft] = useState<OrderEditDraft | null>(null);
+  const [viewMode, setViewMode] = useState<OrdersViewMode>('list');
+  const [reportYear, setReportYear] = useState(() => new Date().getFullYear());
 
   const loadOrders = async () => {
     setLoading(true);
@@ -127,11 +157,36 @@ export function Orders({ token }: OrdersProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiBaseUrl, token]);
 
+  useEffect(() => {
+    if (franchiseFilter === 'all') return;
+    const exists = orders.some((order) => (order.franchiseKey || `name:${order.franchiseName}`) === franchiseFilter);
+    if (!exists) setFranchiseFilter('all');
+  }, [franchiseFilter, orders]);
+
+  const franchiseOptions = useMemo(() => {
+    const seen = new Set<string>();
+    return orders
+      .filter((order) => order.orderChannel === 'b2b')
+      .map((order) => ({
+        value: order.franchiseKey || `name:${order.franchiseName}`,
+        label: order.franchiseKey ? `${order.franchiseName} (${order.franchiseKey})` : order.franchiseName,
+      }))
+      .filter((option) => {
+        if (seen.has(option.value)) return false;
+        seen.add(option.value);
+        return true;
+      })
+      .sort((a, b) => a.label.localeCompare(b.label, 'ko-KR'));
+  }, [orders]);
+
   const filteredOrders = useMemo(() => {
     const q = searchKeyword.trim().toLowerCase();
     return orders.filter((order) => {
-      if (channelFilter !== 'all' && order.orderChannel !== channelFilter) return false;
       if (statusFilter !== 'all' && order.status !== statusFilter) return false;
+      if (franchiseFilter !== 'all') {
+        const orderFilterKey = order.franchiseKey || `name:${order.franchiseName}`;
+        if (orderFilterKey !== franchiseFilter) return false;
+      }
       if (!q) return true;
       return (
         String(order.id).includes(q) ||
@@ -140,7 +195,7 @@ export function Orders({ token }: OrdersProps) {
         (order.deliveryPhone || '').toLowerCase().includes(q)
       );
     });
-  }, [orders, searchKeyword, channelFilter, statusFilter]);
+  }, [orders, franchiseFilter, searchKeyword, statusFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filteredOrders.length / pageSize));
   const safeCurrentPage = Math.min(currentPage, totalPages);
@@ -183,7 +238,7 @@ export function Orders({ token }: OrdersProps) {
 
   const downloadCsv = () => {
     const header = ['주문번호', '주문구분', '가맹점', '주문일', '금액', '상태', '품목수'];
-    const rows = orders.map((order) => [
+    const rows = filteredOrders.map((order) => [
       `#${order.id}`,
       order.orderChannel === 'b2c' ? '프론트' : '가맹점',
       order.franchiseName,
@@ -197,10 +252,184 @@ export function Orders({ token }: OrdersProps) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `sangol-orders-${new Date().toISOString().slice(0, 10)}.csv`;
+    const selectedFranchiseLabel =
+      franchiseFilter === 'all'
+        ? 'all-franchises'
+        : franchiseOptions.find((option) => option.value === franchiseFilter)?.label || 'selected-franchise';
+    const safeFranchiseLabel = selectedFranchiseLabel.replace(/[^\w가-힣()-]+/g, '-');
+    link.download = `sangol-orders-${safeFranchiseLabel}-${new Date().toISOString().slice(0, 10)}.csv`;
     link.click();
     URL.revokeObjectURL(url);
   };
+
+  const downloadAllFranchiseWorkbook = () => {
+    const b2bOrders = orders.filter((order) => order.orderChannel === 'b2b');
+    if (b2bOrders.length === 0) return;
+
+    const workbook = XLSX.utils.book_new();
+    const grouped = new Map<string, OrderRecord[]>();
+    b2bOrders.forEach((order) => {
+      const key = order.franchiseKey || `name:${order.franchiseName}`;
+      const existing = grouped.get(key) || [];
+      existing.push(order);
+      grouped.set(key, existing);
+    });
+
+    const usedSheetNames = new Set<string>();
+    grouped.forEach((groupOrders) => {
+      const baseName = groupOrders[0]?.franchiseName || '미지정 가맹점';
+      let sheetName = sanitizeSheetName(baseName);
+      let suffix = 1;
+      while (usedSheetNames.has(sheetName)) {
+        const nextName = `${sanitizeSheetName(baseName).slice(0, 28)}-${suffix}`;
+        sheetName = nextName.slice(0, 31);
+        suffix += 1;
+      }
+      usedSheetNames.add(sheetName);
+
+      const maxItemCount = groupOrders.reduce((max, order) => Math.max(max, order.items.length), 0);
+      const rows = groupOrders.map((order) => {
+        const baseRow: Record<string, string | number> = {
+          주문번호: `#${order.id}`,
+          가맹점명: order.franchiseName,
+          가맹점키: order.franchiseKey || '-',
+          주문일시: formatDate(order.createdAt),
+          상태: STATUS_META[order.status]?.label || order.status,
+          수령인: order.recipientName || '-',
+          연락처: order.deliveryPhone || '-',
+          배송지: order.deliveryAddress || '-',
+          요청사항: order.deliveryRequest || '-',
+          총금액: order.totalAmount,
+          품목수: order.items.length,
+        };
+        for (let i = 0; i < maxItemCount; i += 1) {
+          const item = order.items[i];
+          baseRow[`품목${i + 1}`] = item ? `${item.productName} x${item.quantity}` : '';
+        }
+        return baseRow;
+      });
+
+      const worksheet = XLSX.utils.json_to_sheet(rows);
+      XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+    });
+
+    XLSX.writeFile(workbook, `sangol-orders-all-franchises-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
+
+  const canDownloadTransactionStatement = (status: OrderStatus): boolean =>
+    status === 'shipped' || status === 'delivered';
+
+  const getEligibleStatementOrders = (source: OrderRecord[]): OrderRecord[] =>
+    source.filter((order) => canDownloadTransactionStatement(order.status) && order.items.length > 0);
+
+  const toTransactionStatementOrder = (order: OrderRecord): TransactionStatementOrder => ({
+    id: order.id,
+    createdAt: order.createdAt,
+    franchiseName: order.franchiseName,
+    franchiseContactPerson: order.franchiseContactPerson,
+    franchiseBusinessNumber: order.franchiseBusinessNumber,
+    franchisePhone: order.franchisePhone,
+    franchiseAddress: order.franchiseAddress,
+    deliveryAddress: order.deliveryAddress,
+    deliveryPhone: order.deliveryPhone,
+    recipientName: order.recipientName,
+    deliveryRequest: order.deliveryRequest,
+    totalAmount: order.totalAmount,
+    items: order.items.map((item) => ({
+      productName: item.productName,
+      unit: item.unit,
+      taxType: item.taxType,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      totalPrice: item.totalPrice,
+    })),
+  });
+
+  const handleDownloadTransactionStatement = async (order: OrderRecord) => {
+    if (!canDownloadTransactionStatement(order.status)) {
+      window.alert('출고 또는 배송완료 상태의 주문만 거래명세표를 생성할 수 있습니다.');
+      return;
+    }
+    if (order.items.length === 0) {
+      window.alert('주문 품목이 없어 거래명세표를 생성할 수 없습니다.');
+      return;
+    }
+    try {
+      await downloadTransactionStatement(toTransactionStatementOrder(order));
+    } catch (downloadError) {
+      window.alert(
+        downloadError instanceof Error ? downloadError.message : '거래명세표 생성 중 오류가 발생했습니다.'
+      );
+    }
+  };
+
+  const downloadFranchiseTransactionStatements = async () => {
+    const eligible = getEligibleStatementOrders(filteredOrders);
+    if (eligible.length === 0) {
+      window.alert('출고·배송완료 상태이면서 품목이 있는 주문이 없습니다. 필터를 확인해 주세요.');
+      return;
+    }
+
+    const fileLabel =
+      franchiseFilter === 'all'
+        ? '전체가맹점'
+        : franchiseOptions.find((option) => option.value === franchiseFilter)?.label || '선택가맹점';
+
+    try {
+      await downloadMultiOrderTransactionStatements(
+        eligible.map((order) => toTransactionStatementOrder(order)),
+        fileLabel
+      );
+    } catch (downloadError) {
+      window.alert(
+        downloadError instanceof Error ? downloadError.message : '가맹점별 거래명세표 생성 중 오류가 발생했습니다.'
+      );
+    }
+  };
+
+  const downloadAllFranchiseTransactionStatements = async () => {
+    const b2bEligible = getEligibleStatementOrders(orders.filter((order) => order.orderChannel === 'b2b'));
+    if (b2bEligible.length === 0) {
+      window.alert('가맹점(B2B) 주문 중 출고·배송완료 건이 없습니다.');
+      return;
+    }
+
+    const grouped = new Map<string, OrderRecord[]>();
+    b2bEligible.forEach((order) => {
+      const key = order.franchiseKey || `name:${order.franchiseName}`;
+      const existing = grouped.get(key) || [];
+      existing.push(order);
+      grouped.set(key, existing);
+    });
+
+    try {
+      for (const groupOrders of grouped.values()) {
+        const franchiseName = groupOrders[0]?.franchiseName || '미지정가맹점';
+        await downloadMultiOrderTransactionStatements(
+          groupOrders.map((order) => toTransactionStatementOrder(order)),
+          franchiseName
+        );
+      }
+    } catch (downloadError) {
+      window.alert(
+        downloadError instanceof Error ? downloadError.message : '가맹점별 거래명세표 일괄 생성 중 오류가 발생했습니다.'
+      );
+    }
+  };
+
+  const eligibleStatementCount = getEligibleStatementOrders(filteredOrders).length;
+
+  const reportYearOptions = useMemo(() => {
+    const current = new Date().getFullYear();
+    return Array.from({ length: 6 }, (_, index) => current - index);
+  }, []);
+
+  const monthlyReport = useMemo(
+    () => buildFranchiseMonthlyReport(orders, reportYear),
+    [orders, reportYear]
+  );
+
+  const monthColumnHeaders = useMemo(() => getMonthColumnHeaders(reportYear), [reportYear]);
 
   const getStatusBadge = (status: OrderStatus) => {
     const meta = STATUS_META[status] || STATUS_META.pending;
@@ -214,6 +443,88 @@ export function Orders({ token }: OrdersProps) {
   const firstVisible = filteredOrders.length === 0 ? 0 : (safeCurrentPage - 1) * pageSize + 1;
   const lastVisible = Math.min(safeCurrentPage * pageSize, filteredOrders.length);
   const b2bCount = orders.filter((o) => o.orderChannel === 'b2b').length;
+
+  const openOrderDetail = (order: OrderRecord) => {
+    setSelectedOrder(order);
+    setEditDraft({
+      deliveryAddress: order.deliveryAddress || '',
+      deliveryPhone: order.deliveryPhone || '',
+      recipientName: order.recipientName || '',
+      deliveryRequest: order.deliveryRequest || '',
+      items: order.items.map((item) => ({
+        productId: item.productId,
+        productName: item.productName,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+      })),
+    });
+  };
+
+  const saveOrderEdit = async () => {
+    if (!selectedOrder || !editDraft) return;
+    if (editDraft.items.length === 0) {
+      setError('주문 항목은 최소 1개 이상이어야 합니다.');
+      return;
+    }
+    if (editDraft.items.some((item) => !Number.isInteger(item.quantity) || item.quantity < 1)) {
+      setError('수량은 1 이상의 정수여야 합니다.');
+      return;
+    }
+
+    setUpdatingOrderId(selectedOrder.id);
+    setError('');
+    try {
+      const response = await fetch(`${apiBaseUrl}/admin/orders/${selectedOrder.id}`, {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          deliveryAddress: editDraft.deliveryAddress.trim(),
+          deliveryPhone: editDraft.deliveryPhone.trim(),
+          recipientName: editDraft.recipientName.trim(),
+          deliveryRequest: editDraft.deliveryRequest.trim(),
+          items: editDraft.items.map((item) => ({
+            productId: item.productId,
+            quantity: item.quantity,
+          })),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data?.error || '주문 수정 실패');
+      await loadOrders();
+      setSelectedOrder(null);
+      setEditDraft(null);
+    } catch (updateError) {
+      setError(updateError instanceof Error ? updateError.message : '주문 수정에 실패했습니다.');
+    } finally {
+      setUpdatingOrderId(null);
+    }
+  };
+
+  const deleteOrder = async () => {
+    if (!selectedOrder) return;
+    if (!window.confirm(`주문 #${selectedOrder.id}를 삭제하시겠습니까?`)) return;
+
+    setUpdatingOrderId(selectedOrder.id);
+    setError('');
+    try {
+      const response = await fetch(`${apiBaseUrl}/admin/orders/${selectedOrder.id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data?.error || '주문 삭제 실패');
+      await loadOrders();
+      setSelectedOrder(null);
+      setEditDraft(null);
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : '주문 삭제에 실패했습니다.');
+    } finally {
+      setUpdatingOrderId(null);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -234,15 +545,66 @@ export function Orders({ token }: OrdersProps) {
           <button
             type="button"
             onClick={downloadCsv}
-            disabled={orders.length === 0}
+            disabled={filteredOrders.length === 0}
             className="px-4 py-2 bg-green-700 text-white rounded-lg hover:bg-green-800 transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            엑셀 다운로드
+            가맹점별 엑셀 다운로드
+          </button>
+          <button
+            type="button"
+            onClick={downloadAllFranchiseWorkbook}
+            disabled={orders.filter((order) => order.orderChannel === 'b2b').length === 0}
+            className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            전체 가맹점 시트별 엑셀
+          </button>
+          <button
+            type="button"
+            onClick={() => void downloadFranchiseTransactionStatements()}
+            disabled={eligibleStatementCount === 0}
+            className="px-4 py-2 bg-purple-700 text-white rounded-lg hover:bg-purple-800 transition disabled:opacity-50 disabled:cursor-not-allowed"
+            title="현재 필터(가맹점·상태·검색)에 해당하는 출고·배송완료 주문의 거래명세표"
+          >
+            거래명세표 다운로드 ({eligibleStatementCount})
+          </button>
+          <button
+            type="button"
+            onClick={() => void downloadAllFranchiseTransactionStatements()}
+            disabled={getEligibleStatementOrders(orders.filter((o) => o.orderChannel === 'b2b')).length === 0}
+            className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+            title="가맹점마다 거래명세표 파일을 각각 생성합니다"
+          >
+            가맹점별 거래명세표(전체)
           </button>
         </div>
       </div>
 
       {error ? <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">{error}</div> : null}
+
+      <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 pb-1">
+        <button
+          type="button"
+          onClick={() => setViewMode('list')}
+          className={`px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 transition ${
+            viewMode === 'list'
+              ? 'border-green-700 text-green-800 bg-white'
+              : 'border-transparent text-gray-500 hover:text-gray-800'
+          }`}
+        >
+          주문 목록
+        </button>
+        <button
+          type="button"
+          onClick={() => setViewMode('monthly')}
+          className={`px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 transition ${
+            viewMode === 'monthly'
+              ? 'border-green-700 text-green-800 bg-white'
+              : 'border-transparent text-gray-500 hover:text-gray-800'
+          }`}
+        >
+          가맹점·월별 현황
+        </button>
+      </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
@@ -253,8 +615,27 @@ export function Orders({ token }: OrdersProps) {
           <p className="text-xs text-gray-500">가맹점 주문(B2B)</p>
           <p className="text-xl font-bold text-[#1A4D2E]">{b2bCount}건</p>
         </div>
+        {viewMode === 'monthly' ? (
+          <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+            <p className="text-xs text-gray-500">{reportYear}년 B2B 주문</p>
+            <p className="text-xl font-bold text-gray-900">{monthlyReport.grandTotal.orderCount}건</p>
+          </div>
+        ) : null}
       </div>
 
+      {viewMode === 'monthly' ? (
+        <FranchiseMonthlyOrderView
+          loading={loading}
+          report={monthlyReport}
+          monthColumnHeaders={monthColumnHeaders}
+          reportYear={reportYear}
+          reportYearOptions={reportYearOptions}
+          onYearChange={setReportYear}
+        />
+      ) : null}
+
+      {viewMode === 'list' ? (
+      <>
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
           <input
@@ -267,16 +648,19 @@ export function Orders({ token }: OrdersProps) {
             className="md:col-span-2 px-3 py-2 border border-gray-300 rounded-lg"
           />
           <select
-            value={channelFilter}
+            value={franchiseFilter}
             onChange={(e) => {
-              setChannelFilter(e.target.value as 'all' | 'b2b' | 'b2c');
+              setFranchiseFilter(e.target.value);
               setCurrentPage(1);
             }}
             className="px-3 py-2 border border-gray-300 rounded-lg bg-white"
           >
-            <option value="all">전체 구분</option>
-            <option value="b2b">가맹점(B2B)</option>
-            <option value="b2c">프론트(B2C)</option>
+            <option value="all">전체 가맹점</option>
+            {franchiseOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
           </select>
           <select
             value={statusFilter}
@@ -357,13 +741,24 @@ export function Orders({ token }: OrdersProps) {
                       </select>
                     </td>
                     <td className="px-6 py-4">
-                      <button
-                        type="button"
-                        onClick={() => setSelectedOrder(order)}
-                        className="text-sm text-green-700 hover:text-green-800 font-medium"
-                      >
-                        상세보기
-                      </button>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openOrderDetail(order)}
+                          className="text-sm text-green-700 hover:text-green-800 font-medium"
+                        >
+                          상세보기
+                        </button>
+                        {canDownloadTransactionStatement(order.status) ? (
+                          <button
+                            type="button"
+                            onClick={() => void handleDownloadTransactionStatement(order)}
+                            className="text-sm text-purple-700 hover:text-purple-900 font-medium"
+                          >
+                            거래명세표
+                          </button>
+                        ) : null}
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -424,8 +819,10 @@ export function Orders({ token }: OrdersProps) {
           </div>
         </div>
       </div>
+      </>
+      ) : null}
 
-      {selectedOrder ? (
+      {selectedOrder && editDraft ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-3xl max-h-[88vh] overflow-hidden rounded-xl bg-white shadow-2xl">
             <div className="flex items-start justify-between border-b px-6 py-4">
@@ -482,8 +879,30 @@ export function Orders({ token }: OrdersProps) {
                 </div>
                 <div className="rounded-lg bg-gray-50 p-3 md:col-span-2">
                   <p className="text-gray-500">주문 배송지 / 요청사항</p>
-                  <p className="font-semibold text-gray-900">{selectedOrder.deliveryAddress || '-'}</p>
-                  <p className="text-gray-600 mt-1">{selectedOrder.deliveryRequest || '-'}</p>
+                  <input
+                    value={editDraft.deliveryAddress}
+                    onChange={(e) => setEditDraft((prev) => (prev ? { ...prev, deliveryAddress: e.target.value } : prev))}
+                    className="w-full mt-1 px-2 py-1 border border-gray-300 rounded"
+                    placeholder="배송지"
+                  />
+                  <input
+                    value={editDraft.deliveryPhone}
+                    onChange={(e) => setEditDraft((prev) => (prev ? { ...prev, deliveryPhone: e.target.value } : prev))}
+                    className="w-full mt-2 px-2 py-1 border border-gray-300 rounded"
+                    placeholder="연락처"
+                  />
+                  <input
+                    value={editDraft.recipientName}
+                    onChange={(e) => setEditDraft((prev) => (prev ? { ...prev, recipientName: e.target.value } : prev))}
+                    className="w-full mt-2 px-2 py-1 border border-gray-300 rounded"
+                    placeholder="수령인"
+                  />
+                  <textarea
+                    value={editDraft.deliveryRequest}
+                    onChange={(e) => setEditDraft((prev) => (prev ? { ...prev, deliveryRequest: e.target.value } : prev))}
+                    className="w-full mt-2 px-2 py-1 border border-gray-300 rounded"
+                    placeholder="요청사항"
+                  />
                 </div>
               </div>
 
@@ -497,23 +916,70 @@ export function Orders({ token }: OrdersProps) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
-                  {selectedOrder.items.map((item) => (
-                    <tr key={item.id}>
+                  {editDraft.items.map((item, index) => (
+                    <tr key={`${item.productId}-${index}`}>
                       <td className="px-4 py-3">
                         <p className="font-medium text-gray-900">{item.productName}</p>
-                        <p className="text-xs text-gray-500">
-                          {item.productCode} · {item.unit}
-                        </p>
                       </td>
                       <td className="px-4 py-3 text-right text-sm">₩{item.unitPrice.toLocaleString('ko-KR')}</td>
-                      <td className="px-4 py-3 text-right text-sm">{item.quantity}</td>
+                      <td className="px-4 py-3 text-right text-sm">
+                        <input
+                          type="number"
+                          min={1}
+                          value={item.quantity}
+                          onChange={(e) =>
+                            setEditDraft((prev) =>
+                              prev
+                                ? {
+                                    ...prev,
+                                    items: prev.items.map((prevItem, prevIndex) =>
+                                      prevIndex === index
+                                        ? { ...prevItem, quantity: Math.max(1, Number(e.target.value) || 1) }
+                                        : prevItem
+                                    ),
+                                  }
+                                : prev
+                            )
+                          }
+                          className="w-20 px-2 py-1 border border-gray-300 rounded text-right"
+                        />
+                      </td>
                       <td className="px-4 py-3 text-right text-sm font-semibold">
-                        ₩{item.totalPrice.toLocaleString('ko-KR')}
+                        ₩{(item.unitPrice * item.quantity).toLocaleString('ko-KR')}
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+              <div className="flex flex-wrap justify-between gap-2">
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={deleteOrder}
+                    disabled={updatingOrderId === selectedOrder.id}
+                    className="px-4 py-2 border border-red-300 text-red-700 rounded-lg hover:bg-red-50 disabled:opacity-60"
+                  >
+                    주문 삭제
+                  </button>
+                  {canDownloadTransactionStatement(selectedOrder.status) ? (
+                    <button
+                      type="button"
+                      onClick={() => void handleDownloadTransactionStatement(selectedOrder)}
+                      className="px-4 py-2 border border-purple-300 text-purple-800 rounded-lg hover:bg-purple-50"
+                    >
+                      거래명세표 (.xlsx)
+                    </button>
+                  ) : null}
+                </div>
+                <button
+                  type="button"
+                  onClick={saveOrderEdit}
+                  disabled={updatingOrderId === selectedOrder.id}
+                  className="px-4 py-2 bg-green-700 text-white rounded-lg hover:bg-green-800 disabled:opacity-60"
+                >
+                  주문 수정 저장
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -6,6 +6,22 @@
   --cms-front-font-family: 'Noto Sans KR', 'Malgun Gothic', sans-serif;
   --cms-front-font-body-family: var(--cms-front-font-family);
   --cms-front-font-heading-family: var(--cms-front-font-family);
+
+  /* 전체 화면 기준 레이아웃 (좌우 여백 최소화) */
+  --site-max-width: 100%;
+  --site-max-width-narrow: min(100%, 56rem);
+  --site-gutter: 20px;
+}
+
+.site-container {
+  width: 100%;
+  max-width: var(--site-max-width);
+  margin-inline: auto;
+  padding-inline: var(--site-gutter);
+}
+
+.site-container--narrow {
+  max-width: var(--site-max-width-narrow);
 }
 
 html, body, #root {
@@ -34,4 +50,43 @@ h1, h2, h3 {
 
 .custom-scrollbar::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/* Home hero: Ken Burns + natural tone */
+@keyframes hero-ken-burns-a {
+  0% {
+    transform: scale(1) translate3d(0, 0, 0);
+  }
+  100% {
+    transform: scale(1.1) translate3d(-1.2%, -0.8%, 0);
+  }
+}
+
+@keyframes hero-ken-burns-b {
+  0% {
+    transform: scale(1.04) translate3d(-0.6%, 0, 0);
+  }
+  100% {
+    transform: scale(1.12) translate3d(1%, -1%, 0);
+  }
+}
+
+.hero-ken-burns-a {
+  animation: hero-ken-burns-a 22s ease-in-out forwards;
+}
+
+.hero-ken-burns-b {
+  animation: hero-ken-burns-b 24s ease-in-out forwards;
+}
+
+.hero-image-tone {
+  filter: saturate(1.12) contrast(1.06) brightness(1.03);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-ken-burns-a,
+  .hero-ken-burns-b {
+    animation: none;
+    transform: scale(1.02);
+  }
 }

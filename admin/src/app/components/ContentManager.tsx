@@ -1,4 +1,11 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { ExternalLink } from 'lucide-react';
+import { CmsFieldEditorPart } from './cms/CmsFieldEditorPart';
+import type { CmsFieldConfig } from './cms/CmsFieldEditorCard';
+import { groupFieldsIntoParts } from './cms/cmsFieldGrouping';
+import { CmsPageOverviewPreview } from './cms/CmsPageWireframe';
+import { getFrontPreviewUrl } from './cms/cmsFieldPlacementMeta';
+import { CMS_FIXED_LINK_VALUES_BY_PAGE, resolveCmsFieldLink } from './cms/cmsFieldLinkMeta';
 import { API_BASE_URL } from '../lib/apiBaseUrl';
 
 type CmsPage = {
@@ -14,6 +21,7 @@ type CmsMedia = {
   id: number;
   originalName: string;
   publicUrl: string;
+  fileUrl?: string;
   createdAt: string;
   mimeType?: string;
   sizeBytes?: number;
@@ -38,6 +46,12 @@ type FieldConfig = {
   placeholder?: string;
   disabled?: boolean;
 };
+type FieldGroup = {
+  id: string;
+  title: string;
+  description: string;
+  fields: FieldConfig[];
+};
 
 const PRESET_PAGE_KEYS = [
   'site-layout',
@@ -55,6 +69,146 @@ const PRESET_PAGE_KEYS = [
 ];
 const PRESET_PAGE_KEY_SET = new Set(PRESET_PAGE_KEYS);
 
+const PAGE_SECTION_TEMPLATES: Record<string, Record<string, unknown>> = {
+  'site-layout': {
+    topMenu: {
+      loginLabel: '가맹점 로그인',
+      mypageLabel: '마이페이지',
+      noticeText: '',
+    },
+    footer: {
+      ownerName: '정현철',
+      address: '강원특별자치도 화천군 사내면 검단길 213-49',
+      csPhone: '1522-4680',
+      fax: '02-784-8222',
+      email: 'sangol2017@naver.com',
+      copyright: 'Copyright(c) 농업법인㈜산골. All Rights Reserved.',
+    },
+    logo: {
+      headerLogoMediaId: '',
+      footerLogoMediaId: '',
+    },
+    typography: {
+      enabled: true,
+      fontMediaId: '',
+      fontMediaIdEn: '',
+      fontFamilyName: '',
+      fontFamilyNameEn: '',
+    },
+  },
+  home: {
+    hero: {
+      subtitle: '강원도 화천 청정 두메산골에서 자란 명품 임산물과 고냉지 농산물',
+      title: '자연의 생명력을 그대로 담아,\n(주)산골이 건강한 약속을 전합니다',
+      subtitle2: '',
+    },
+    heroActions: [
+      { label: '상품 둘러보기', link: '/products/forest', variant: 'primary' },
+    ],
+    trustBadges: [
+      { title: '안전한 원산지', desc: '산지 추적 관리', iconUrl: 'https://img.icons8.com/color/96/certificate.png' },
+      { title: '품질 인증', desc: '엄격한 선별 기준', iconUrl: 'https://img.icons8.com/color/96/medal2.png' },
+      { title: '빠른 배송', desc: '신선도 우선 출고', iconUrl: 'https://img.icons8.com/color/96/delivery.png' },
+      { title: '검수 완료', desc: '출고 전 품질 점검', iconUrl: 'https://img.icons8.com/color/96/checked--v1.png' },
+    ],
+    intro: {
+      iconUrl: '',
+      title: '"신뢰를 바탕으로 건강한 먹거리를 공급합니다"',
+      description1: '금융권 경력을 뒤로하고 고향으로 돌아와 설립한 농업법인 (주)산골은\n강원도 화천의 맑은 자연이 주는 선물에 정성을 더해 명품 임산물을 키워냅니다.',
+      description2: '사람과 자연의 조화, 그리고 정직과 신뢰의 경영 철학으로\n지속가능한 체험·가공·관광 농업의 비전을 실현하며 K-푸드 프리미엄 브랜드로 도약하겠습니다.',
+    },
+    support: {
+      phone: '1522-4680',
+      notice: '주말 및 공휴일은 상담 불가하므로\n평일 업무 시간 내 문의 부탁드립니다.',
+    },
+  },
+  order: {
+    payment: {
+      accountName: '농업회사법인(주)산골',
+      accountNumber: '입금 계좌는 고객센터(1522-4680)로 문의해 주세요.',
+      requiredNotice: '※ 반드시 입금 후 주문을 확정해 주세요. 미입금 시 출고가 진행되지 않습니다.',
+    },
+  },
+  'company-greeting': {
+    headerTitle: '인사말',
+    headerSubtitle: '자연의 가치를 지키는 농업법인 (주)산골입니다.',
+    messageTitle: '신뢰로 키우고,\n명품으로 보답하겠습니다.',
+  },
+  'company-history': {
+    header: { title: '연혁', subtitle: '자연과 함께 걸어온 (주)산골의 발자취입니다.' },
+    body: {
+      title: '농업회사법인 (주)산골 연혁',
+      subtitle: '2017년 설립부터 현재까지, 신뢰와 정직으로 성장해온 기록입니다.',
+    },
+  },
+  'company-awards': {
+    header: { title: '수상 및 인증', subtitle: '엄격한 기준을 통과한 산골의 자부심입니다.' },
+    body: {
+      title: '국가가 인정한 프리미엄 임산물',
+      subtitle: '청정 숲에서 자란 우수한 품질을 증명하는 인증 내역과 혜택 안내입니다.',
+    },
+  },
+  'company-location': {
+    header: { title: '오시는 길', subtitle: '본사·직영점 및 가맹점 안내' },
+    headOffice: {
+      title: '본사(농장)',
+      subTitle: '강원 화천 두메산골',
+      address: '강원특별자치도 화천군 사내면 검단길 213-49',
+      phone: '1522-4680',
+      fax: '02-784-8222',
+    },
+    directStore: {
+      title: '직영점 : 잠실 콩밭',
+      subTitle: '서울 송파',
+      address: '서울특별시 송파구 석촌호수로84 107호',
+      phone: '1522-4680',
+      fax: '02-784-8222',
+    },
+  },
+  'business-philosophy': {
+    header: { title: '경영철학', subtitle: '농업회사법인 (주)산골이 추구하는 변하지 않는 가치' },
+    intro: {
+      title: '자연과 사람이 함께 만드는\n프리미엄 임산물',
+      description:
+        '(주)산골은 자연의 순리를 따르며, 바른 먹거리를 통해 고객의 건강한 삶과\n지속 가능한 미래를 책임집니다.',
+    },
+  },
+  'business-vision': {
+    header: { title: '비전', subtitle: '지속가능한 체험·가공·관광 농업으로 K-푸드 프리미엄 브랜드' },
+  },
+  'business-core-competence': {
+    header: { title: '핵심 역량', subtitle: '자연이 허락한 최고의 재료와 깐깐한 고집이 만든 자부심' },
+    intro: {
+      title: '자연과 사람이 피워낸\n프리미엄의 완성',
+      description:
+        '(주)산골은 깨끗한 자연이 주는 잠재력에 타협 없는 기술력과 관리 시스템을 더해,\n독보적인 프리미엄 임산물의 새로운 기준을 제시합니다.',
+    },
+  },
+  'business-farm': {
+    header: { title: '농장 소개', subtitle: '자연 그대로의 방식을 고집하는 산골의 청정 농장' },
+    body: {
+      title: '자연과 사람이 피워낸 건강한 먹거리',
+      description:
+        '농업 법인(주)산골은 청정 두메산골에서 가장 친환경적인 방식으로 재배하며, 정직과 신뢰를 바탕으로 자연의 가치를 지키고 건강과 행복을 더합니다.',
+    },
+  },
+  support: {
+    header: {
+      title: '고객센터',
+      subtitle: '무엇을 도와드릴까요? 산골의 고객센터입니다.',
+    },
+    consult: {
+      phone: '1522-4680',
+      weekday: '09:00 - 18:00',
+      lunch: '12:00 - 13:00',
+      closed: '주말 및 공휴일 휴무',
+    },
+    privacyText:
+      '1. 수집하는 개인정보 항목: 이름, 연락처, 이메일\n2. 수집 및 이용 목적: 문의 내역 확인 및 답변 처리, 처리 내역 안내\n3. 보유 및 이용 기간: 문의 처리 완료 후 3년간 보관\n* 귀하는 개인정보 수집 및 이용에 거부할 권리가 있으나, 거부 시 문의 접수 및 답변이 제한될 수 있습니다.',
+    faqs: [],
+  },
+};
+
 const PAGE_KEY_DESCRIPTIONS: Record<string, { label: string; description: string }> = {
   'site-layout': {
     label: '공통 레이아웃',
@@ -62,7 +216,7 @@ const PAGE_KEY_DESCRIPTIONS: Record<string, { label: string; description: string
   },
   home: {
     label: '메인 홈',
-    description: '첫 화면의 메인 비주얼, 배경 이미지, 고객센터 문구를 관리합니다.',
+    description: '첫 화면의 메인 비주얼, 핵심역량 카드 텍스트/이미지, 고객센터 문구를 관리합니다.',
   },
   'company-greeting': {
     label: '회사소개 - 인사말',
@@ -106,30 +260,25 @@ const PAGE_KEY_DESCRIPTIONS: Record<string, { label: string; description: string
   },
 };
 
-const FIXED_LINK_VALUES_BY_PAGE: Record<string, Record<string, string>> = {
-  home: {
-    'features.0.link': '/business/core-competence',
-    'features.1.link': '/company/awards',
-    'features.2.link': '/company/awards',
-    'features.3.link': '/business/farm',
-    'featuredCards.0.link': '/products/forest',
-    'featuredCards.1.link': '/products/agriculture',
-    'featuredCards.2.link': '/products/forest',
-    'featuredCards.3.link': '/products/manufactured',
-    'communityPosts.0.link': '/community/story',
-    'communityPosts.1.link': '/community/story',
-    'communityPosts.2.link': '/community/concert',
-    'communityPosts.3.link': '/community/story',
-  },
-};
-
 const PAGE_FIELD_CONFIGS: Record<string, FieldConfig[]> = {
   'site-layout': [
     { path: 'topMenu.loginLabel', label: '상단 메뉴 > 로그인', description: '상단 우측 로그인 메뉴 문구', type: 'text' },
     { path: 'topMenu.mypageLabel', label: '상단 메뉴 > 마이페이지', description: '상단 우측 마이페이지 문구', type: 'text' },
     { path: 'topMenu.noticeText', label: '상단 공지 문구', description: '헤더 최상단 중앙에 노출되는 혜택 문구', type: 'text' },
-    { path: 'logo.headerLogoUrl', label: '헤더 로고 이미지', description: '헤더 좌측 로고 이미지 URL', type: 'image', imageValueType: 'url' },
-    { path: 'logo.footerLogoUrl', label: '푸터 로고 이미지', description: '푸터 로고 이미지 URL', type: 'image', imageValueType: 'url' },
+    {
+      path: 'logo.headerLogoMediaId',
+      label: '헤더 로고',
+      description: '헤더 좌측 로고. 공용 이미지함에서 선택하거나 업로드하면 DB(media)에 저장됩니다.',
+      type: 'image',
+      imageValueType: 'mediaId',
+    },
+    {
+      path: 'logo.footerLogoMediaId',
+      label: '푸터 로고',
+      description: '푸터 로고. 공용 이미지함에서 선택하거나 업로드하면 DB(media)에 저장됩니다.',
+      type: 'image',
+      imageValueType: 'mediaId',
+    },
     {
       path: 'typography.enabled',
       label: '전역 폰트 적용 여부',
@@ -138,38 +287,14 @@ const PAGE_FIELD_CONFIGS: Record<string, FieldConfig[]> = {
     },
     {
       path: 'typography.fontMediaId',
-      label: '전역 한글 폰트 파일',
-      description: '한글 텍스트용 전역 폰트 파일을 업로드하면 자동으로 연결됩니다.',
+      label: '전역 한글 폰트',
+      description: '제목·본문 등 사이트 전체 한글에 적용됩니다. (woff2 권장)',
       type: 'font',
     },
     {
       path: 'typography.fontMediaIdEn',
-      label: '전역 영문 폰트 파일',
-      description: '영문/숫자 텍스트용 전역 폰트 파일을 업로드하면 자동으로 연결됩니다.',
-      type: 'font',
-    },
-    {
-      path: 'typography.headingFontMediaId',
-      label: '제목(H1~H3) 한글 폰트 파일',
-      description: '제목 한글 텍스트용 폰트 파일을 업로드하면 자동으로 연결됩니다.',
-      type: 'font',
-    },
-    {
-      path: 'typography.headingFontMediaIdEn',
-      label: '제목(H1~H3) 영문 폰트 파일',
-      description: '제목 영문/숫자 텍스트용 폰트 파일을 업로드하면 자동으로 연결됩니다.',
-      type: 'font',
-    },
-    {
-      path: 'typography.bodyFontMediaId',
-      label: '본문 한글 폰트 파일',
-      description: '본문 한글 텍스트용 폰트 파일을 업로드하면 자동으로 연결됩니다.',
-      type: 'font',
-    },
-    {
-      path: 'typography.bodyFontMediaIdEn',
-      label: '본문 영문 폰트 파일',
-      description: '본문 영문/숫자 텍스트용 폰트 파일을 업로드하면 자동으로 연결됩니다.',
+      label: '전역 영문·숫자 폰트',
+      description: '제목·본문 등 사이트 전체 영문·숫자에 적용됩니다. (woff2 권장)',
       type: 'font',
     },
     { path: 'footer.ownerName', label: '대표자명', description: '푸터 회사 정보의 대표자명', type: 'text' },
@@ -180,33 +305,42 @@ const PAGE_FIELD_CONFIGS: Record<string, FieldConfig[]> = {
     { path: 'footer.copyright', label: '저작권 문구', description: '푸터 하단 저작권 문구', type: 'text' },
   ],
   home: [
-    { path: 'hero.subtitle', label: '메인 비주얼 > 보조 문구', description: '히어로 상단 보조 텍스트', type: 'text' },
-    { path: 'hero.title', label: '메인 비주얼 > 메인 문구', description: '줄바꿈은 Enter로 입력', type: 'textarea' },
-    { path: 'heroActions.0.label', label: '히어로 버튼 1 문구', description: '기본 CTA 버튼 문구', type: 'text' },
-    { path: 'heroActions.0.link', label: '히어로 버튼 1 링크', description: '예: /products/forest', type: 'text' },
-    { path: 'heroActions.0.variant', label: '히어로 버튼 1 스타일', description: 'primary 또는 outline', type: 'text' },
-    { path: 'heroActions.1.label', label: '히어로 버튼 2 문구', description: '보조 CTA 버튼 문구', type: 'text' },
-    { path: 'heroActions.1.link', label: '히어로 버튼 2 링크', description: '예: /order', type: 'text' },
-    { path: 'heroActions.1.variant', label: '히어로 버튼 2 스타일', description: 'primary 또는 outline', type: 'text' },
+    { path: 'hero.subtitle', label: '메인 비주얼 > 보조 문구 1', description: '히어로 상단 보조 텍스트', type: 'text' },
+    { path: 'hero.title', label: '메인 비주얼 > 메인 문구', description: '히어로 중앙 H1 텍스트 (줄바꿈은 Enter)', type: 'textarea' },
+    { path: 'hero.subtitle2', label: '메인 비주얼 > 보조 문구 2', description: '메인 문구(H1) 바로 아래 보조 텍스트', type: 'text' },
+    { path: 'heroActions.0.label', label: '히어로 버튼 문구', description: '메인 CTA 버튼 문구', type: 'text' },
+    { path: 'heroActions.0.variant', label: '히어로 버튼 스타일', description: 'primary 또는 outline', type: 'text' },
     { path: 'heroImages.0', label: '메인 비주얼 이미지 1', description: '첫 번째 슬라이드 배경 이미지', type: 'image', imageValueType: 'url' },
     { path: 'heroImages.1', label: '메인 비주얼 이미지 2', description: '두 번째 슬라이드 배경 이미지', type: 'image', imageValueType: 'url' },
     { path: 'heroImages.2', label: '메인 비주얼 이미지 3', description: '세 번째 슬라이드 배경 이미지', type: 'image', imageValueType: 'url' },
     { path: 'trustBadges.0.title', label: '신뢰배지 1 제목', description: '상단 신뢰배지 타이틀', type: 'text' },
     { path: 'trustBadges.0.desc', label: '신뢰배지 1 설명', description: '짧은 부가설명', type: 'text' },
+    { path: 'trustBadges.0.iconUrl', label: '신뢰배지 1 아이콘 URL', description: '아이콘 이미지 링크', type: 'text', placeholder: 'https://img.icons8.com/color/96/certificate.png' },
     { path: 'trustBadges.1.title', label: '신뢰배지 2 제목', description: '상단 신뢰배지 타이틀', type: 'text' },
     { path: 'trustBadges.1.desc', label: '신뢰배지 2 설명', description: '짧은 부가설명', type: 'text' },
+    { path: 'trustBadges.1.iconUrl', label: '신뢰배지 2 아이콘 URL', description: '아이콘 이미지 링크', type: 'text', placeholder: 'https://img.icons8.com/color/96/medal2.png' },
     { path: 'trustBadges.2.title', label: '신뢰배지 3 제목', description: '상단 신뢰배지 타이틀', type: 'text' },
     { path: 'trustBadges.2.desc', label: '신뢰배지 3 설명', description: '짧은 부가설명', type: 'text' },
+    { path: 'trustBadges.2.iconUrl', label: '신뢰배지 3 아이콘 URL', description: '아이콘 이미지 링크', type: 'text', placeholder: 'https://img.icons8.com/color/96/delivery.png' },
     { path: 'trustBadges.3.title', label: '신뢰배지 4 제목', description: '상단 신뢰배지 타이틀', type: 'text' },
     { path: 'trustBadges.3.desc', label: '신뢰배지 4 설명', description: '짧은 부가설명', type: 'text' },
-    { path: 'features.0.img', label: '홈 카드(핵심역량) 이미지 1', description: '첫 번째 카드 이미지', type: 'image', imageValueType: 'url' },
-    { path: 'features.1.img', label: '홈 카드(핵심역량) 이미지 2', description: '두 번째 카드 이미지', type: 'image', imageValueType: 'url' },
-    { path: 'features.2.img', label: '홈 카드(핵심역량) 이미지 3', description: '세 번째 카드 이미지', type: 'image', imageValueType: 'url' },
-    { path: 'features.3.img', label: '홈 카드(핵심역량) 이미지 4', description: '네 번째 카드 이미지', type: 'image', imageValueType: 'url' },
-    { path: 'featuredCards.0.img', label: '홈 카드(추천상품 홍보) 이미지 1', description: '첫 번째 추천상품 홍보 카드 이미지 (실상품 DB와 별개)', type: 'image', imageValueType: 'url' },
-    { path: 'featuredCards.1.img', label: '홈 카드(추천상품 홍보) 이미지 2', description: '두 번째 추천상품 홍보 카드 이미지 (실상품 DB와 별개)', type: 'image', imageValueType: 'url' },
-    { path: 'featuredCards.2.img', label: '홈 카드(추천상품 홍보) 이미지 3', description: '세 번째 추천상품 홍보 카드 이미지 (실상품 DB와 별개)', type: 'image', imageValueType: 'url' },
-    { path: 'featuredCards.3.img', label: '홈 카드(추천상품 홍보) 이미지 4', description: '네 번째 추천상품 홍보 카드 이미지 (실상품 DB와 별개)', type: 'image', imageValueType: 'url' },
+    { path: 'trustBadges.3.iconUrl', label: '신뢰배지 4 아이콘 URL', description: '아이콘 이미지 링크', type: 'text', placeholder: 'https://img.icons8.com/color/96/checked--v1.png' },
+    { path: 'features.0.title', label: '핵심역량 카드 1 제목', description: '메인 중단 카드 영역 텍스트', type: 'text' },
+    { path: 'features.0.desc', label: '핵심역량 카드 1 설명', description: '메인 중단 카드 영역 설명', type: 'textarea' },
+    { path: 'features.0.img', label: '핵심역량 카드 1 이미지', description: '메인 중단 카드 이미지', type: 'image', imageValueType: 'url' },
+    { path: 'features.1.title', label: '핵심역량 카드 2 제목', description: '메인 중단 카드 영역 텍스트', type: 'text' },
+    { path: 'features.1.desc', label: '핵심역량 카드 2 설명', description: '메인 중단 카드 영역 설명', type: 'textarea' },
+    { path: 'features.1.img', label: '핵심역량 카드 2 이미지', description: '메인 중단 카드 이미지', type: 'image', imageValueType: 'url' },
+    { path: 'features.2.title', label: '핵심역량 카드 3 제목', description: '메인 중단 카드 영역 텍스트', type: 'text' },
+    { path: 'features.2.desc', label: '핵심역량 카드 3 설명', description: '메인 중단 카드 영역 설명', type: 'textarea' },
+    { path: 'features.2.img', label: '핵심역량 카드 3 이미지', description: '메인 중단 카드 이미지', type: 'image', imageValueType: 'url' },
+    { path: 'features.3.title', label: '핵심역량 카드 4 제목', description: '메인 중단 카드 영역 텍스트', type: 'text' },
+    { path: 'features.3.desc', label: '핵심역량 카드 4 설명', description: '메인 중단 카드 영역 설명', type: 'textarea' },
+    { path: 'features.3.img', label: '핵심역량 카드 4 이미지', description: '메인 중단 카드 이미지', type: 'image', imageValueType: 'url' },
+    { path: 'intro.iconUrl', label: '브랜드 스토리 > 상단 아이콘', description: '리프 아이콘 대신 사용할 이미지(URL)', type: 'image', imageValueType: 'url' },
+    { path: 'intro.title', label: '브랜드 스토리 > 제목', description: '예: "신뢰를 바탕으로 건강한 먹거리를 공급합니다"', type: 'text' },
+    { path: 'intro.description1', label: '브랜드 스토리 > 본문 1', description: '메인 중단 브랜드 스토리 영역 첫 번째 문단', type: 'textarea' },
+    { path: 'intro.description2', label: '브랜드 스토리 > 본문 2', description: '메인 중단 브랜드 스토리 영역 두 번째 문단', type: 'textarea' },
     { path: 'support.phone', label: '홈 고객센터 전화번호', description: '홈 하단 문의영역의 대표번호', type: 'text' },
     { path: 'support.notice', label: '홈 고객센터 안내문구', description: '줄바꿈은 Enter로 입력', type: 'textarea' },
   ],
@@ -219,6 +353,29 @@ const PAGE_FIELD_CONFIGS: Record<string, FieldConfig[]> = {
     { path: 'consult.lunch', label: '점심시간', description: '예: 12:00 - 13:00', type: 'text' },
     { path: 'consult.closed', label: '휴무 안내', description: '예: 주말 및 공휴일 휴무', type: 'text' },
     { path: 'privacyText', label: '개인정보 동의 문구', description: '문의폼 하단 안내 문구', type: 'textarea' },
+  ],
+  order: [
+    {
+      path: 'payment.accountName',
+      label: '입금 안내 > 계좌명',
+      description: '마이페이지 및 주문완료 모달에 노출되는 입금 계좌명',
+      type: 'text',
+      placeholder: '예: 농업회사법인 (주)산골',
+    },
+    {
+      path: 'payment.accountNumber',
+      label: '입금 안내 > 계좌번호',
+      description: '마이페이지 및 주문완료 모달에 노출되는 입금 계좌번호',
+      type: 'text',
+      placeholder: '예: 농협 351-0000-0000-00',
+    },
+    {
+      path: 'payment.requiredNotice',
+      label: '입금 안내 > 필수 입금 안내문구',
+      description: '빨간색 강조 문구로 노출됩니다.',
+      type: 'textarea',
+      placeholder: '예: ※ 반드시 입금 후 주문을 확정해 주세요. 미입금 시 출고가 진행되지 않습니다.',
+    },
   ],
   'company-location': [
     { path: 'header.title', label: '오시는길 제목', description: '페이지 상단 제목', type: 'text' },
@@ -262,7 +419,27 @@ const PAGE_FIELD_CONFIGS: Record<string, FieldConfig[]> = {
 const toLabelFromPath = (path: string): string =>
   path
     .split('.')
-    .map((part) => part.replace(/([a-z])([A-Z])/g, '$1 $2'))
+    .map((part) => {
+      if (/^\d+$/.test(part)) return `${Number(part) + 1}번 항목`;
+      const keyMap: Record<string, string> = {
+        topMenu: '상단 메뉴',
+        logo: '로고',
+        typography: '폰트',
+        footer: '하단 정보',
+        header: '상단 제목 영역',
+        consult: '상담 안내 영역',
+        privacyText: '개인정보 안내 문구',
+        hero: '메인 배너',
+        heroActions: '메인 배너 버튼',
+        heroImages: '메인 배너 이미지',
+        trustBadges: '신뢰 배지',
+        features: '주요 기능 안내 카드',
+        intro: '첫 화면 상단 소개 영역',
+        support: '하단 문의 안내 영역',
+        payment: '입금 안내',
+      };
+      return keyMap[part] || part.replace(/([a-z])([A-Z])/g, '$1 $2');
+    })
     .join(' > ');
 
 const guessImageValueType = (path: string): 'url' | 'mediaId' => {
@@ -280,6 +457,26 @@ const guessFieldType = (path: string, value: unknown): FieldType => {
 };
 
 const isFixedLinkField = (path: string): boolean => /(^|\.)link$/i.test(path);
+const shouldHideFieldInAdmin = (pageKey: string, path: string): boolean => {
+  if (/(\.|^)link$/i.test(path)) return true;
+  if (pageKey === 'site-layout' && /^typography\.(heading|body)Font/i.test(path)) return true;
+  if (pageKey === 'site-layout' && /^typography\.fontFamilyName/i.test(path)) return true;
+  if (pageKey === 'site-layout' && /^logo\.(header|footer)LogoUrl$/i.test(path)) return true;
+  if (
+    pageKey === 'site-layout' &&
+    path.startsWith('logo.') &&
+    path !== 'logo.headerLogoMediaId' &&
+    path !== 'logo.footerLogoMediaId'
+  ) {
+    return true;
+  }
+  // 운영자 화면에서는 미사용 레거시 지도 키를 숨긴다. (실제 지도는 address 기반 렌더링)
+  if (pageKey === 'company-location' && /(^|\.)mapKey$/i.test(path)) return true;
+  if (pageKey === 'home' && path.startsWith('featuredCards.')) return true;
+  if (pageKey === 'home' && path.startsWith('communityPosts.')) return true;
+  if (pageKey === 'support' && path.startsWith('faqs.')) return true;
+  return false;
+};
 
 const collectAutoFieldConfigs = (obj: unknown, prefix = '', depth = 0): FieldConfig[] => {
   if (depth > 5 || obj === null || obj === undefined) return [];
@@ -372,7 +569,7 @@ const setValueByPath = (obj: Record<string, unknown>, path: string, value: unkno
 };
 
 const applyFixedLinkValues = (pageKey: string, sections: Record<string, unknown>): Record<string, unknown> => {
-  const fixedLinks = FIXED_LINK_VALUES_BY_PAGE[pageKey];
+  const fixedLinks = CMS_FIXED_LINK_VALUES_BY_PAGE[pageKey];
   if (!fixedLinks) return sections;
 
   return Object.entries(fixedLinks).reduce(
@@ -393,6 +590,31 @@ const normalizeHomeSectionsKeys = (pageKey: string, sections: Record<string, unk
     delete next.products;
   }
   return next;
+};
+
+const mergeTemplateSections = (pageKey: string, sections: Record<string, unknown>): Record<string, unknown> => {
+  const template = PAGE_SECTION_TEMPLATES[pageKey];
+  if (!template) return sections;
+
+  const mergeDeep = (base: unknown, current: unknown): unknown => {
+    if (Array.isArray(base)) {
+      const currentArray = Array.isArray(current) ? current : [];
+      return base.map((item, index) => mergeDeep(item, currentArray[index]));
+    }
+    if (base && typeof base === 'object') {
+      const baseObj = base as Record<string, unknown>;
+      const currentObj = current && typeof current === 'object' ? (current as Record<string, unknown>) : {};
+      const merged: Record<string, unknown> = { ...currentObj };
+      Object.entries(baseObj).forEach(([key, value]) => {
+        merged[key] = mergeDeep(value, currentObj[key]);
+      });
+      return merged;
+    }
+    if (current === undefined || current === null || current === '') return base;
+    return current;
+  };
+
+  return mergeDeep(template, sections) as Record<string, unknown>;
 };
 
 const sanitizeFontFamilyToken = (raw: string): string =>
@@ -416,13 +638,64 @@ const normalizeDisplayFileName = (raw: string): string => {
 };
 
 const getFontFamilyPathByMediaPath = (mediaPath: string): string | null => {
-  if (mediaPath === 'typography.headingFontMediaId') return 'typography.headingFontFamilyName';
-  if (mediaPath === 'typography.headingFontMediaIdEn') return 'typography.headingFontFamilyNameEn';
-  if (mediaPath === 'typography.bodyFontMediaId') return 'typography.bodyFontFamilyName';
-  if (mediaPath === 'typography.bodyFontMediaIdEn') return 'typography.bodyFontFamilyNameEn';
   if (mediaPath === 'typography.fontMediaId') return 'typography.fontFamilyName';
   if (mediaPath === 'typography.fontMediaIdEn') return 'typography.fontFamilyNameEn';
   return null;
+};
+
+/** 제목/본문 분리 폰트 키를 전역 한글·영문 2종으로 정리 */
+const normalizeTypographySections = (sections: Record<string, unknown>): Record<string, unknown> => {
+  const raw = sections.typography;
+  if (!raw || typeof raw !== 'object') return sections;
+
+  const t = raw as Record<string, unknown>;
+  const pickMediaId = (...keys: string[]): unknown => {
+    for (const key of keys) {
+      const v = t[key];
+      if (v !== undefined && v !== null && v !== '') return v;
+    }
+    return '';
+  };
+  const pickFamilyName = (...keys: string[]): unknown => {
+    for (const key of keys) {
+      const v = t[key];
+      if (typeof v === 'string' && v.trim()) return v.trim();
+    }
+    return '';
+  };
+
+  const typography: Record<string, unknown> = {
+    enabled: t.enabled !== false,
+    fontMediaId: pickMediaId('fontMediaId', 'bodyFontMediaId', 'headingFontMediaId'),
+    fontMediaIdEn: pickMediaId('fontMediaIdEn', 'bodyFontMediaIdEn', 'headingFontMediaIdEn'),
+    fontFamilyName: pickFamilyName('fontFamilyName', 'bodyFontFamilyName', 'headingFontFamilyName'),
+    fontFamilyNameEn: pickFamilyName('fontFamilyNameEn', 'bodyFontFamilyNameEn', 'headingFontFamilyNameEn'),
+  };
+
+  return { ...sections, typography };
+};
+
+/** 로고는 mediaId 2개(헤더·푸터)만 유지하고 URL 등 레거시 키 제거 */
+const normalizeLogoSections = (sections: Record<string, unknown>): Record<string, unknown> => {
+  const raw = sections.logo;
+  if (!raw || typeof raw !== 'object') {
+    return { ...sections, logo: { headerLogoMediaId: '', footerLogoMediaId: '' } };
+  }
+  const logo = raw as Record<string, unknown>;
+  const pickId = (...keys: string[]): string | number => {
+    for (const key of keys) {
+      const v = logo[key];
+      if (v !== undefined && v !== null && v !== '') return v as string | number;
+    }
+    return '';
+  };
+  return {
+    ...sections,
+    logo: {
+      headerLogoMediaId: pickId('headerLogoMediaId'),
+      footerLogoMediaId: pickId('footerLogoMediaId'),
+    },
+  };
 };
 
 export function ContentManager({ token }: ContentManagerProps) {
@@ -442,6 +715,7 @@ export function ContentManager({ token }: ContentManagerProps) {
   const [advancedMode, setAdvancedMode] = useState(false);
   const [mediaQuery, setMediaQuery] = useState('');
   const [pickerField, setPickerField] = useState<FieldConfig | null>(null);
+  const [expandedGroupIds, setExpandedGroupIds] = useState<string[]>([]);
 
   const authHeaders = { Authorization: `Bearer ${token}` };
   const isAllowedPageKey = (pageKey: string): boolean => PRESET_PAGE_KEY_SET.has(pageKey);
@@ -466,8 +740,10 @@ export function ContentManager({ token }: ContentManagerProps) {
     if (!response.ok) {
       if (response.status === 404) {
         setTitle('');
-        setSectionsObject({});
-        setSectionsText('{}');
+        const templateSections = mergeTemplateSections(pageKey, {});
+        const nextSections = applyFixedLinkValues(pageKey, normalizeHomeSectionsKeys(pageKey, templateSections));
+        setSectionsObject(nextSections);
+        setSectionsText(JSON.stringify(nextSections, null, 2));
         setSeoText('{}');
         setPublished(true);
         return;
@@ -477,7 +753,11 @@ export function ContentManager({ token }: ContentManagerProps) {
 
     setTitle(data.title || '');
     const normalizedSections = normalizeHomeSectionsKeys(pageKey, (data.sections ?? {}) as Record<string, unknown>);
-    const nextSections = applyFixedLinkValues(pageKey, normalizedSections);
+    const mergedSections = mergeTemplateSections(pageKey, normalizedSections);
+    const withLogo = pageKey === 'site-layout' ? normalizeLogoSections(mergedSections) : mergedSections;
+    const withTypography =
+      pageKey === 'site-layout' ? normalizeTypographySections(withLogo) : withLogo;
+    const nextSections = applyFixedLinkValues(pageKey, withTypography);
     setSectionsObject(nextSections);
     setSectionsText(JSON.stringify(nextSections, null, 2));
     setSeoText(JSON.stringify(data.seo ?? {}, null, 2));
@@ -520,7 +800,12 @@ export function ContentManager({ token }: ContentManagerProps) {
       if (!isAllowedPageKey(selectedKey)) {
         throw new Error('허용되지 않은 페이지 키입니다. 프리셋 페이지만 저장할 수 있습니다.');
       }
-      const sections = applyFixedLinkValues(selectedKey, normalizeHomeSectionsKeys(selectedKey, JSON.parse(sectionsText)));
+      const parsedSections = JSON.parse(sectionsText) as Record<string, unknown>;
+      const normalized = normalizeHomeSectionsKeys(selectedKey, parsedSections);
+      const withLogo = selectedKey === 'site-layout' ? normalizeLogoSections(normalized) : normalized;
+      const withTypography =
+        selectedKey === 'site-layout' ? normalizeTypographySections(withLogo) : withLogo;
+      const sections = applyFixedLinkValues(selectedKey, withTypography);
       const seo = JSON.parse(seoText);
 
       const response = await fetch(`${apiBaseUrl}/content/admin/pages/${selectedKey}`, {
@@ -614,9 +899,13 @@ export function ContentManager({ token }: ContentManagerProps) {
     }
   };
 
-  const presetPageFields = PAGE_FIELD_CONFIGS[selectedKey] ?? [];
+  const presetPageFields = (PAGE_FIELD_CONFIGS[selectedKey] ?? []).filter(
+    (field) => !shouldHideFieldInAdmin(selectedKey, field.path)
+  );
   const autoGeneratedFields = collectAutoFieldConfigs(sectionsObject).filter(
-    (field) => !presetPageFields.some((preset) => preset.path === field.path)
+    (field) =>
+      !presetPageFields.some((preset) => preset.path === field.path) &&
+      !shouldHideFieldInAdmin(selectedKey, field.path)
   );
   const pageFields = [...presetPageFields, ...autoGeneratedFields];
   const sectionsGuide = pageFields;
@@ -629,13 +918,19 @@ export function ContentManager({ token }: ContentManagerProps) {
       ? sectionsGuide.filter((field) => field.path.startsWith('typography.'))
       : [];
 
+  const getCmsMediaFileUrl = (mediaId: number): string =>
+    `${apiBaseUrl}/content/public/media/${mediaId}/file`;
+
+  const getMediaPreviewSrc = (item: CmsMedia): string =>
+    item.fileUrl?.trim() || getCmsMediaFileUrl(item.id);
+
   const getImagePreviewSrc = (field: FieldConfig): string => {
     const rawValue = getValueByPath(sectionsObject, field.path);
     if (!rawValue) return '';
     if (field.imageValueType === 'mediaId') {
       const id = Number(rawValue);
-      if (!Number.isFinite(id)) return '';
-      return `${apiBaseUrl}/content/public/media/${id}/file`;
+      if (!Number.isFinite(id) || id <= 0) return '';
+      return getCmsMediaFileUrl(id);
     }
     return rawValue;
   };
@@ -654,6 +949,21 @@ export function ContentManager({ token }: ContentManagerProps) {
   };
 
   const getEnhancedDescription = (field: FieldConfig): string => {
+    const detailDescriptionMap: Record<string, string> = {
+      'header.title': '이 문구는 해당 페이지 상단의 가장 큰 제목(H1)으로 노출됩니다.',
+      'header.subtitle': '이 문구는 상단 큰 제목 바로 아래 보조 설명으로 노출됩니다.',
+      'header.bannerImage': '이 이미지는 페이지 최상단 배경(배너)으로 노출됩니다.',
+      'headOffice.title': '오시는길 페이지의 "본사 카드" 제목으로 표시됩니다.',
+      'headOffice.address': '본사 카드 주소 문구 + 지도 위치 생성 기준 주소로 함께 사용됩니다.',
+      'headOffice.phone': '본사 카드의 고객센터 전화번호로 노출됩니다.',
+      'directStore.title': '오시는길 페이지의 "직영점 카드" 제목으로 표시됩니다.',
+      'directStore.address': '직영점 카드 주소 문구 + 지도 위치 생성 기준 주소로 함께 사용됩니다.',
+      'directStore.phone': '직영점 카드의 고객센터 전화번호로 노출됩니다.',
+      privacyText: '문의폼 하단의 개인정보 안내 문구로 노출됩니다.',
+    };
+    const pathDescription =
+      detailDescriptionMap[field.path] ||
+      field.description;
     const orderHint = getFieldOrderHint(field.path);
     const valueTypeHint =
       field.type === 'image'
@@ -661,7 +971,222 @@ export function ContentManager({ token }: ContentManagerProps) {
           ? ' (미디어 ID가 자동으로 입력됩니다)'
           : ' (파일 URL이 자동으로 입력됩니다)'
         : '';
-    return `${field.description}${orderHint ? ` · ${orderHint}` : ''}${valueTypeHint}`;
+    return `${pathDescription}${orderHint ? ` · 화면 순서 ${orderHint}` : ''}${valueTypeHint}`;
+  };
+
+  const cmsGetValue = (path: string) => getValueByPath(sectionsObject, path);
+  const cmsGetImageSrc = (path: string) => {
+    const fieldGuess: FieldConfig = {
+      path,
+      label: '',
+      description: '',
+      type: 'image',
+      imageValueType: guessImageValueType(path),
+    };
+    return getImagePreviewSrc(fieldGuess);
+  };
+
+  const renderFieldPart = (fields: FieldConfig[]) =>
+    groupFieldsIntoParts(fields).map((part) => (
+      <CmsFieldEditorPart
+        key={part.id}
+        pageKey={selectedKey}
+        part={part}
+        getValue={cmsGetValue}
+        getRawValue={(path) => getRawValueByPath(sectionsObject, path)}
+        getImageSrc={cmsGetImageSrc}
+        resolveLink={(path) => resolveCmsFieldLink(selectedKey, path, cmsGetValue)}
+        getEnhancedDescription={getEnhancedDescription}
+        getImagePreviewSrc={getImagePreviewSrc}
+        getMediaFileName={(path) => getMediaNameFromValue(getValueByPath(sectionsObject, path))}
+        uploading={uploading}
+        onTextChange={updateSectionsFromField}
+        onToggleChange={updateSectionsFromField}
+        onOpenMediaPicker={setPickerField}
+        onClearImage={(path) => updateSectionsFromField(path, '')}
+        onUploadImage={(field, file) =>
+          onUploadMedia(file, ({ id, url }) =>
+            updateSectionsFromField(field.path, field.imageValueType === 'mediaId' ? String(id) : url)
+          )
+        }
+        onUploadFont={(field, file) =>
+          onUploadFont(file, ({ id, originalName }) => {
+            const nextWithId = setValueByPath(sectionsObject, field.path, String(id));
+            const familyPath = getFontFamilyPathByMediaPath(field.path);
+            const autoFamily = `Sangol${sanitizeFontFamilyToken(originalName)}${id}`;
+            const next = familyPath ? setValueByPath(nextWithId, familyPath, autoFamily) : nextWithId;
+            setSectionsObject(next);
+            setSectionsText(JSON.stringify(next, null, 2));
+          })
+        }
+      />
+    ));
+
+  const displayBaseFields = useMemo(
+    () => (selectedKey === 'site-layout' ? layoutGeneralFields : sectionsGuide),
+    [selectedKey, layoutGeneralFields, sectionsGuide]
+  );
+  const displayFieldGroups = useMemo<FieldGroup[]>(() => {
+    if (selectedKey === 'site-layout') {
+      const groupDefs: Array<{ id: string; title: string; description: string; matcher: (path: string) => boolean }> = [
+        {
+          id: 'site-top-menu',
+          title: '1) 홈페이지 상단 메뉴 영역',
+          description: '로그인/마이페이지/상단 공지 등 최상단 메뉴 문구를 관리합니다.',
+          matcher: (path) => path.startsWith('topMenu.'),
+        },
+        {
+          id: 'site-logo',
+          title: '2) 홈페이지 로고 영역',
+          description: '헤더·푸터 로고 각 1개(공용 이미지함 media ID). URL 직접 입력은 사용하지 않습니다.',
+          matcher: (path) => path.startsWith('logo.'),
+        },
+        {
+          id: 'site-font',
+          title: '3) 전역 폰트 (한글 · 영문)',
+          description: '사이트 전체(제목·본문)에 한글 1종, 영문·숫자 1종만 적용합니다.',
+          matcher: (path) => path.startsWith('typography.'),
+        },
+        {
+          id: 'site-footer',
+          title: '4) 홈페이지 하단 정보 영역',
+          description: '대표자/주소/고객센터 등 하단 고정 정보를 관리합니다.',
+          matcher: (path) => path.startsWith('footer.'),
+        },
+      ];
+      const grouped = groupDefs.map((def) => ({
+        id: def.id,
+        title: def.title,
+        description: def.description,
+        fields:
+          def.id === 'site-font'
+            ? layoutTypographyFields
+            : displayBaseFields.filter((field) => def.matcher(field.path)),
+      }));
+      return grouped.filter((group) => group.fields.length > 0);
+    }
+
+    if (selectedKey === 'support') {
+      const groupDefs: Array<{ id: string; title: string; description: string; matcher: (path: string) => boolean }> = [
+        {
+          id: 'support-header',
+          title: '1) 고객센터 상단 소개 영역',
+          description: '고객센터 페이지 첫 화면 제목/부제목/배너를 관리합니다.',
+          matcher: (path) => path.startsWith('header.'),
+        },
+        {
+          id: 'support-consult',
+          title: '2) 상담 정보 영역',
+          description: '전화번호, 상담시간, 휴무안내 문구를 관리합니다.',
+          matcher: (path) => path.startsWith('consult.'),
+        },
+        {
+          id: 'support-privacy',
+          title: '3) 문의폼 안내 영역',
+          description: '문의폼 하단 개인정보 안내 문구를 관리합니다.',
+          matcher: (path) => path.startsWith('privacyText'),
+        },
+      ];
+      const grouped = groupDefs.map((def) => ({
+        id: def.id,
+        title: def.title,
+        description: def.description,
+        fields: displayBaseFields.filter((field) => def.matcher(field.path)),
+      }));
+      return grouped.filter((group) => group.fields.length > 0);
+    }
+
+    if (selectedKey !== 'home') {
+      return [
+        {
+          id: 'page-content',
+          title: '1) 화면 구성 항목',
+          description: '사용자 화면에서 위에서 아래 순서로 보이는 항목을 관리합니다.',
+          fields: displayBaseFields,
+        },
+      ];
+    }
+
+    const groupDefs: Array<{
+      id: string;
+      title: string;
+      description: string;
+      matcher: (path: string) => boolean;
+    }> = [
+      {
+        id: 'hero',
+        title: '1) 메인 비주얼(최상단)',
+        description: '첫 화면 상단 배너 영역입니다. 보조문구, 메인문구, 버튼, 배경 이미지를 수정합니다.',
+        matcher: (path) => path.startsWith('hero.') || path.startsWith('heroActions.') || path.startsWith('heroImages.'),
+      },
+      {
+        id: 'trust',
+        title: '2) 신뢰 배지',
+        description: '메인 비주얼 아래에 보이는 인증/신뢰 카드 영역입니다.',
+        matcher: (path) => path.startsWith('trustBadges.'),
+      },
+      {
+        id: 'features',
+        title: '3) 핵심역량 카드',
+        description: '메인 중단 4개 카드(제목/설명/이미지) 영역입니다.',
+        matcher: (path) => path.startsWith('features.'),
+      },
+      {
+        id: 'intro',
+        title: '4) 브랜드 스토리 문단',
+        description: '상단 아이콘, 제목, 소개 문단 2개를 수정하는 영역입니다.',
+        matcher: (path) => path.startsWith('intro.'),
+      },
+      {
+        id: 'support',
+        title: '5) 하단 고객센터',
+        description: '메인 하단 문의/전화번호 영역입니다.',
+        matcher: (path) => path.startsWith('support.'),
+      },
+    ];
+
+    const grouped = groupDefs.map((def) => ({
+      id: def.id,
+      title: def.title,
+      description: def.description,
+      fields: displayBaseFields.filter((field) => def.matcher(field.path)),
+    }));
+
+    const usedPaths = new Set(grouped.flatMap((group) => group.fields.map((field) => field.path)));
+    const fallbackFields = displayBaseFields.filter((field) => !usedPaths.has(field.path));
+    if (fallbackFields.length > 0) {
+      grouped.push({
+        id: 'others',
+        title: '기타 항목',
+        description: '현재 화면의 추가 항목입니다.',
+        fields: fallbackFields,
+      });
+    }
+
+    return grouped.filter((group) => group.fields.length > 0);
+  }, [displayBaseFields, layoutTypographyFields, selectedKey]);
+
+  const displayGroupKey = useMemo(
+    () => `${selectedKey}:${displayFieldGroups.map((group) => group.id).join('|')}`,
+    [selectedKey, displayFieldGroups]
+  );
+
+  useEffect(() => {
+    if (displayFieldGroups.length === 0) {
+      setExpandedGroupIds([]);
+      return;
+    }
+    const first = displayFieldGroups[0].id;
+    setExpandedGroupIds((prev) => {
+      const valid = prev.filter((id) => displayFieldGroups.some((group) => group.id === id));
+      return valid.length > 0 ? valid : [first];
+    });
+  }, [displayGroupKey]);
+
+  const toggleGroupExpanded = (groupId: string) => {
+    setExpandedGroupIds((prev) =>
+      prev.includes(groupId) ? prev.filter((id) => id !== groupId) : [...prev, groupId]
+    );
   };
 
   const filteredMedia = useMemo(() => {
@@ -772,7 +1297,7 @@ export function ContentManager({ token }: ContentManagerProps) {
 
   const applyMediaToField = (field: FieldConfig, selected: CmsMedia) => {
     if (field.type !== 'image') return;
-    const mediaFileUrl = `${apiBaseUrl}/content/public/media/${selected.id}/file`;
+    const mediaFileUrl = getCmsMediaFileUrl(selected.id);
     const nextValue = field.imageValueType === 'mediaId' ? String(selected.id) : mediaFileUrl;
     updateSectionsFromField(field.path, nextValue);
     setMessage(`"${field.label}" 항목에 공용 이미지가 연결되었습니다.`);
@@ -820,19 +1345,13 @@ export function ContentManager({ token }: ContentManagerProps) {
   const typographyPreview = (() => {
     const t = (sectionsObject.typography ?? {}) as Record<string, unknown>;
     const enabled = t.enabled !== false;
-    const bodyFallback = "'Noto Sans KR', 'Malgun Gothic', sans-serif";
-    const headingFallback = "'Noto Sans KR', 'Malgun Gothic', sans-serif";
-    const bodyFamily = `'CmsPreviewBody', ${bodyFallback}`;
-    const headingFamily = `'CmsPreviewHeading', 'CmsPreviewBody', ${headingFallback}`;
-    const bodyMediaId = Number(t.bodyFontMediaId ?? t.fontMediaId ?? 0);
-    const bodyMediaIdEn = Number(t.bodyFontMediaIdEn ?? t.fontMediaIdEn ?? 0);
-    const headingMediaId = Number(t.headingFontMediaId ?? 0);
-    const headingMediaIdEn = Number(t.headingFontMediaIdEn ?? 0);
-    const bodyUrl = Number.isFinite(bodyMediaId) && bodyMediaId > 0 ? `${apiBaseUrl}/content/public/media/${bodyMediaId}/file` : '';
-    const bodyUrlEn = Number.isFinite(bodyMediaIdEn) && bodyMediaIdEn > 0 ? `${apiBaseUrl}/content/public/media/${bodyMediaIdEn}/file` : '';
-    const headingUrl = Number.isFinite(headingMediaId) && headingMediaId > 0 ? `${apiBaseUrl}/content/public/media/${headingMediaId}/file` : '';
-    const headingUrlEn = Number.isFinite(headingMediaIdEn) && headingMediaIdEn > 0 ? `${apiBaseUrl}/content/public/media/${headingMediaIdEn}/file` : '';
-    return { enabled, bodyFamily, headingFamily, bodyUrl, bodyUrlEn, headingUrl, headingUrlEn };
+    const fallback = "'Noto Sans KR', 'Malgun Gothic', sans-serif";
+    const globalFamily = `'CmsPreviewGlobal', ${fallback}`;
+    const mediaId = Number(t.fontMediaId ?? t.bodyFontMediaId ?? t.headingFontMediaId ?? 0);
+    const mediaIdEn = Number(t.fontMediaIdEn ?? t.bodyFontMediaIdEn ?? t.headingFontMediaIdEn ?? 0);
+    const koUrl = Number.isFinite(mediaId) && mediaId > 0 ? `${apiBaseUrl}/content/public/media/${mediaId}/file` : '';
+    const enUrl = Number.isFinite(mediaIdEn) && mediaIdEn > 0 ? `${apiBaseUrl}/content/public/media/${mediaIdEn}/file` : '';
+    return { enabled, globalFamily, koUrl, enUrl };
   })();
 
   useEffect(() => {
@@ -861,10 +1380,8 @@ export function ContentManager({ token }: ContentManagerProps) {
       `);
     };
 
-    pushFace('CmsPreviewBody', typographyPreview.bodyUrl, koreanRange);
-    pushFace('CmsPreviewBody', typographyPreview.bodyUrlEn, latinRange);
-    pushFace('CmsPreviewHeading', typographyPreview.headingUrl, koreanRange);
-    pushFace('CmsPreviewHeading', typographyPreview.headingUrlEn, latinRange);
+    pushFace('CmsPreviewGlobal', typographyPreview.koUrl, koreanRange);
+    pushFace('CmsPreviewGlobal', typographyPreview.enUrl, latinRange);
 
     if (blocks.length === 0) return;
     const style = document.createElement('style');
@@ -878,10 +1395,8 @@ export function ContentManager({ token }: ContentManagerProps) {
     };
   }, [
     typographyPreview.enabled,
-    typographyPreview.bodyUrl,
-    typographyPreview.bodyUrlEn,
-    typographyPreview.headingUrl,
-    typographyPreview.headingUrlEn,
+    typographyPreview.koUrl,
+    typographyPreview.enUrl,
   ]);
 
   return (
@@ -889,7 +1404,7 @@ export function ContentManager({ token }: ContentManagerProps) {
       <div>
         <h2 className="text-2xl font-bold text-gray-800">프론트 콘텐츠 관리</h2>
         <p className="text-sm text-gray-500 mt-1">
-          페이지별 콘텐츠를 폼으로 관리하고, 공용 이미지함에서 원하는 이미지를 바로 연결할 수 있습니다.
+          운영자가 실제 화면 기준으로 문구/이미지/아이콘을 수정할 수 있는 관리 화면입니다.
         </p>
       </div>
 
@@ -898,7 +1413,7 @@ export function ContentManager({ token }: ContentManagerProps) {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="bg-white rounded-xl border p-4 space-y-3">
-          <h3 className="font-semibold text-gray-800">페이지 키</h3>
+          <h3 className="font-semibold text-gray-800">콘텐츠 화면 목록</h3>
           <div className="space-y-2">
             {PRESET_PAGE_KEYS.map((key) => (
               <button
@@ -915,7 +1430,6 @@ export function ContentManager({ token }: ContentManagerProps) {
                 <span className="block text-xs text-gray-500 mt-1">
                   {PAGE_KEY_DESCRIPTIONS[key]?.description || '직접 추가한 페이지 콘텐츠입니다.'}
                 </span>
-                <span className="block text-xs text-gray-400 mt-1 font-mono">{key}</span>
               </button>
             ))}
           </div>
@@ -924,24 +1438,24 @@ export function ContentManager({ token }: ContentManagerProps) {
         <form onSubmit={onSavePage} className="lg:col-span-2 bg-white rounded-xl border p-4 space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">페이지 키 <span className="text-red-600">*</span></label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">선택 화면 <span className="text-red-600">*</span></label>
               <input
                 value={selectedKey}
                 readOnly
                 className="w-full border rounded-lg px-3 py-2 bg-gray-100 text-gray-600 cursor-not-allowed"
                 required
               />
-              <p className="text-xs text-gray-500 mt-1">페이지 키는 프리셋 목록에서만 선택할 수 있습니다.</p>
+              <p className="text-xs text-gray-500 mt-1">화면 코드는 자동 관리되며, 좌측 목록에서만 선택할 수 있습니다.</p>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">타이틀 <span className="text-red-600">*</span></label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">관리 화면 이름 <span className="text-red-600">*</span></label>
               <input
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 className="w-full border rounded-lg px-3 py-2"
                 required
               />
-              <p className="text-xs text-gray-500 mt-1">관리자 식별용 페이지 제목</p>
+              <p className="text-xs text-gray-500 mt-1">관리자가 구분하기 위한 이름입니다.</p>
             </div>
           </div>
 
@@ -953,38 +1467,43 @@ export function ContentManager({ token }: ContentManagerProps) {
           <div className="rounded-lg border border-green-100 bg-green-50 p-4">
             <h4 className="font-semibold text-green-800 mb-2">사용자 입력 가이드</h4>
             <p className="text-sm text-green-700">
-              JSON을 직접 수정하지 않아도 되도록 항목을 풀어서 보여드립니다. 각 입력칸 설명을 보고 텍스트를 입력하면 됩니다.
-              이미지는 각 항목에서 직접 업로드하거나, 하단 공용 이미지함에서 선택해 연결할 수 있습니다.
+              같은 화면 블록(예: 신뢰배지 1개)은 <strong>한 파트</strong>에 제목·설명·이미지를 함께 수정합니다.
+              왼쪽 미리보기의 노란 테두리가 편집 위치이며, <strong className="text-indigo-800">남색 테두리</strong>는 링크가 있는 영역입니다.
+              오른쪽에서 값을 수정하면 미리보기에 즉시 반영됩니다.
+              이동 URL(<code className="text-xs">.link</code>)은 고정된 항목은 경로만 안내하고, 편집 가능한 항목만 JSON/필드로 노출됩니다.
             </p>
             {selectedKey === 'home' ? (
-              <p className="text-sm text-green-700 mt-2">
-                참고: 홈의 `추천상품` 항목은 메인 화면 홍보 카드용입니다. 실제 상품 정보(가격/재고/상품명)는 상품관리 DB에서 관리됩니다.
-              </p>
+              <div className="text-sm text-green-700 mt-2 space-y-1">
+                <p>인기 상품 영역: 이제 상품관리 DB(`/admin/products`) 데이터를 자동 반영하며, 이 화면에서 별도 편집하지 않습니다.</p>
+                <p>핵심역량 카드 항목: 메인 페이지 중단의 "핵심역량 카드 4개"와 1:1로 연결됩니다.</p>
+              </div>
             ) : null}
           </div>
 
-          {selectedKey === 'site-layout' ? (
-            <div className="rounded-lg border border-[#DCE8D8] bg-[#F8FBF6] p-4 space-y-3">
-              <h4 className="font-semibold text-[#1A4D2E]">폰트 미리보기 샘플</h4>
-              <p className="text-xs text-[#4F6F52]">한글/영문/숫자를 동시에 미리 확인해 시인성과 브랜드 톤을 비교하세요.</p>
-              <div className="rounded-lg border border-[#E4EBDD] bg-white p-4">
-                <p
-                  className="text-2xl font-bold text-[#1A4D2E] mb-2"
-                  style={{ fontFamily: typographyPreview.enabled ? typographyPreview.headingFamily : "'Noto Sans KR', 'Malgun Gothic', sans-serif" }}
+          {sectionsGuide.length > 0 && !advancedMode ? (
+            <div className="rounded-xl border border-[#DCE8D8] bg-[#F8FBF6] p-4 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h4 className="font-semibold text-[#1A4D2E]">전체 화면 구성도</h4>
+                  <p className="text-xs text-[#5F6C60] mt-1">
+                    아래에서 항목을 펼치면 해당 영역이 노란색으로 강조됩니다.
+                  </p>
+                </div>
+                <a
+                  href={getFrontPreviewUrl(selectedKey)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 text-xs font-medium text-[#1A4D2E] px-3 py-1.5 rounded-lg border border-[#C5D4BE] bg-white hover:bg-[#F4F8F1]"
                 >
-                  산골 Premium Headline Aa 123
-                </p>
-                <p style={{ fontFamily: typographyPreview.enabled ? typographyPreview.bodyFamily : "'Noto Sans KR', 'Malgun Gothic', sans-serif" }} className="text-sm text-gray-700 leading-relaxed">
-                  한글: 자연의 건강함을 전합니다. / English: Fresh from SANGOL. / Numbers: 0123456789
-                </p>
+                  실제 페이지에서 확인
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
               </div>
-              <div className="text-xs text-gray-600 space-y-1">
-                <p>적용 상태: {typographyPreview.enabled ? 'ON' : 'OFF'}</p>
-                <p>본문(한글) 폰트 파일: {typographyPreview.bodyUrl || '미지정'}</p>
-                <p>본문(영문) 폰트 파일: {typographyPreview.bodyUrlEn || '미지정'}</p>
-                <p>제목(한글) 폰트 파일: {typographyPreview.headingUrl || '미지정'}</p>
-                <p>제목(영문) 폰트 파일: {typographyPreview.headingUrlEn || '미지정'}</p>
-              </div>
+              <CmsPageOverviewPreview
+                pageKey={selectedKey}
+                getValue={cmsGetValue}
+                getImageSrc={cmsGetImageSrc}
+              />
             </div>
           ) : null}
 
@@ -995,227 +1514,49 @@ export function ContentManager({ token }: ContentManagerProps) {
               </div>
             ) : null}
 
-            {selectedKey === 'site-layout' && layoutTypographyFields.length > 0 ? (
-              <div className="rounded-xl border border-[#D7E4D6] bg-[#F7FBF5] p-4 space-y-4">
-                <div>
-                  <h4 className="text-base font-bold text-[#1A4D2E]">폰트 설정</h4>
-                  <p className="text-xs text-[#4F6F52] mt-1">
-                    공통 레이아웃 최상단에서 전역 타이포그래피를 먼저 설정하세요.
-                  </p>
-                  <p className="text-xs text-[#4F6F52] mt-1">등록된 폰트 파일: {fontMedia.length}개</p>
-                </div>
-                {layoutTypographyFields.map((field) => (
-                  <div key={field.path || field.label} className="border rounded-lg p-4 bg-white">
-                    <p className="text-sm font-semibold text-gray-800">{field.label}</p>
-                  <p className="text-xs text-gray-500 mt-1 mb-2">{getEnhancedDescription(field)}</p>
-
-                    {field.path ? (
-                      <>
-                        {field.type === 'textarea' ? (
-                          <textarea
-                            value={getValueByPath(sectionsObject, field.path)}
-                            onChange={(e) => updateSectionsFromField(field.path, e.target.value)}
-                            placeholder={field.placeholder}
-                            disabled={field.disabled}
-                            className={`w-full border rounded-lg px-3 py-2 text-sm min-h-24 ${
-                              field.disabled ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : ''
-                            }`}
-                          />
-                        ) : field.type === 'toggle' ? (
-                          <label className="inline-flex items-center gap-2 text-sm text-gray-700">
-                            {(() => {
-                              const raw = getRawValueByPath(sectionsObject, field.path);
-                              const checked = field.path.endsWith('.enabled') ? raw !== false : Boolean(raw);
-                              return (
-                                <>
-                                  <input
-                                    type="checkbox"
-                                    checked={checked}
-                                    onChange={(e) => updateSectionsFromField(field.path, e.target.checked)}
-                                    disabled={field.disabled}
-                                  />
-                                  {checked ? '사용' : '미사용'}
-                                </>
-                              );
-                            })()}
-                          </label>
-                        ) : field.type === 'font' ? (
-                          <div className="rounded-lg border border-dashed border-violet-300 bg-violet-50 px-3 py-2 text-sm text-violet-900">
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="text-xs px-2 py-0.5 rounded-full bg-violet-200 text-violet-900 font-semibold">폰트 파일</span>
-                              <span className="text-xs text-violet-700">웹폰트 전용</span>
-                            </div>
-                            <p className="mt-1">
-                              현재 연결 파일: <span className="font-medium">{getMediaNameFromValue(getValueByPath(sectionsObject, field.path))}</span>
-                            </p>
-                          </div>
-                        ) : (
-                          <input
-                            value={getValueByPath(sectionsObject, field.path)}
-                            onChange={(e) => updateSectionsFromField(field.path, e.target.value)}
-                            placeholder={field.placeholder}
-                            disabled={field.disabled}
-                            className={`w-full border rounded-lg px-3 py-2 text-sm ${
-                              field.disabled ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : ''
-                            }`}
-                          />
-                        )}
-
-                        {field.type === 'font' ? (
-                          <div className="mt-3 space-y-2">
-                            <input
-                              type="file"
-                              accept=".woff2,.woff,.ttf,.otf,font/woff2,font/woff,font/ttf,font/otf"
-                              onChange={(e) =>
-                              onUploadFont(e.target.files?.[0] || null, ({ id, originalName }) => {
-                                const nextWithId = setValueByPath(sectionsObject, field.path, String(id));
-                                const familyPath = getFontFamilyPathByMediaPath(field.path);
-                                const autoFamily = `Sangol${sanitizeFontFamilyToken(originalName)}${id}`;
-                                const next = familyPath ? setValueByPath(nextWithId, familyPath, autoFamily) : nextWithId;
-                                setSectionsObject(next);
-                                setSectionsText(JSON.stringify(next, null, 2));
-                              })
-                            }
-                              disabled={uploading || field.disabled}
-                              className="w-full text-sm rounded-lg border border-gray-300 bg-white file:mr-3 file:rounded-md file:border file:border-gray-300 file:bg-gray-50 file:px-3 file:py-1.5 file:text-sm file:font-medium hover:file:bg-gray-100 disabled:opacity-60 disabled:cursor-not-allowed"
-                            />
-                            <p className="text-xs text-gray-500">
-                              폰트 업로드 가이드: woff2 권장, 최대 20MB. 업로드 후 front 전역 폰트에 자동 반영됩니다.
-                            </p>
-                          </div>
-                        ) : null}
-                      </>
-                    ) : null}
+            {displayFieldGroups.map((group) => (
+              <div key={group.id} className="rounded-xl border border-[#E3E9DE] bg-[#FAFCF8] p-4 space-y-3">
+                <button
+                  type="button"
+                  onClick={() => toggleGroupExpanded(group.id)}
+                  className="w-full flex items-start justify-between gap-3 text-left"
+                >
+                  <div>
+                    <h4 className="text-base font-bold text-[#1A4D2E]">{group.title}</h4>
+                    <p className="text-xs text-[#5F6C60] mt-1">{group.description}</p>
                   </div>
-                ))}
-              </div>
-            ) : null}
-
-            {(selectedKey === 'site-layout' ? layoutGeneralFields : sectionsGuide).map((field) => (
-              <div key={field.path || field.label} className="border rounded-lg p-4">
-                <p className="text-sm font-semibold text-gray-800">{field.label}</p>
-                <p className="text-xs text-gray-500 mt-1 mb-2">{getEnhancedDescription(field)}</p>
-
-                {field.path ? (
-                  <>
-                    {field.type === 'textarea' ? (
-                      <textarea
-                        value={getValueByPath(sectionsObject, field.path)}
-                        onChange={(e) => updateSectionsFromField(field.path, e.target.value)}
-                        placeholder={field.placeholder}
-                        disabled={field.disabled}
-                        className={`w-full border rounded-lg px-3 py-2 text-sm min-h-24 ${
-                          field.disabled ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : ''
-                        }`}
-                      />
-                    ) : field.type === 'toggle' ? (
-                      <label className="inline-flex items-center gap-2 text-sm text-gray-700">
-                        {(() => {
-                          const raw = getRawValueByPath(sectionsObject, field.path);
-                          const checked = field.path.endsWith('.enabled') ? raw !== false : Boolean(raw);
-                          return (
-                            <>
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={(e) => updateSectionsFromField(field.path, e.target.checked)}
-                                disabled={field.disabled}
-                              />
-                              {checked ? '사용' : '미사용'}
-                            </>
-                          );
-                        })()}
-                      </label>
-                    ) : field.type === 'font' ? (
-                      <div className="rounded-lg border border-dashed border-violet-300 bg-violet-50 px-3 py-2 text-sm text-violet-900">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-violet-200 text-violet-900 font-semibold">폰트 파일</span>
-                          <span className="text-xs text-violet-700">웹폰트 전용</span>
-                        </div>
-                        <p className="mt-1">
-                          현재 연결 파일: <span className="font-medium">{getMediaNameFromValue(getValueByPath(sectionsObject, field.path))}</span>
+                  <span className="text-xs font-semibold text-[#4F6F52] mt-1">
+                    {expandedGroupIds.includes(group.id) ? '접기' : '펼치기'}
+                  </span>
+                </button>
+                <div className={`space-y-4 ${expandedGroupIds.includes(group.id) ? '' : 'hidden'}`}>
+                  {group.id === 'site-font' ? (
+                    <div className="rounded-lg border border-[#DCE8D8] bg-[#F8FBF6] p-4 space-y-3 mb-2">
+                      <p className="text-xs text-[#4F6F52]">
+                        한글 1종 · 영문·숫자 1종만 등록합니다. 제목·본문 전체에 동일 적용됩니다.
+                        (폰트 라이브러리 {fontMedia.length}개)
+                      </p>
+                      <div className="rounded-lg border border-[#E4EBDD] bg-white p-4 space-y-2">
+                        <p
+                          className="text-xl font-bold text-[#1A4D2E]"
+                          style={{
+                            fontFamily: typographyPreview.enabled
+                              ? typographyPreview.globalFamily
+                              : "'Noto Sans KR', 'Malgun Gothic', sans-serif",
+                          }}
+                        >
+                          산골 Premium Aa 123
+                        </p>
+                        <p className="text-xs text-gray-600">
+                          적용 {typographyPreview.enabled ? 'ON' : 'OFF'} · 한글{' '}
+                          {typographyPreview.koUrl ? '연결' : '미지정'} · 영문{' '}
+                          {typographyPreview.enUrl ? '연결' : '미지정'}
                         </p>
                       </div>
-                    ) : (
-                      <input
-                        value={getValueByPath(sectionsObject, field.path)}
-                        onChange={(e) => updateSectionsFromField(field.path, e.target.value)}
-                        placeholder={field.placeholder}
-                        disabled={field.disabled}
-                        className={`w-full border rounded-lg px-3 py-2 text-sm ${
-                          field.disabled ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : ''
-                        }`}
-                      />
-                    )}
-
-                    {field.type === 'image' ? (
-                      <div className="mt-3 space-y-2">
-                        <input
-                          type="file"
-                          accept="image/*"
-                          onChange={(e) =>
-                            onUploadMedia(e.target.files?.[0] || null, ({ id, url }) =>
-                              updateSectionsFromField(field.path, field.imageValueType === 'mediaId' ? String(id) : url)
-                            )
-                          }
-                          disabled={uploading || field.disabled}
-                          className="w-full text-sm rounded-lg border border-gray-300 bg-white file:mr-3 file:rounded-md file:border file:border-gray-300 file:bg-gray-50 file:px-3 file:py-1.5 file:text-sm file:font-medium hover:file:bg-gray-100 disabled:opacity-60 disabled:cursor-not-allowed"
-                        />
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setPickerField(field)}
-                            className="px-3 py-1.5 text-xs rounded-md border border-gray-300 hover:bg-gray-50"
-                            disabled={field.disabled}
-                          >
-                            공용 이미지함에서 선택
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => updateSectionsFromField(field.path, '')}
-                            className="px-3 py-1.5 text-xs rounded-md border border-red-200 text-red-700 hover:bg-red-50"
-                            disabled={field.disabled}
-                          >
-                            연결 해제
-                          </button>
-                        </div>
-                        <p className="text-xs text-gray-500">
-                          선택 안내: "공용 이미지함에서 선택"을 누르면 업로드된 이미지 목록에서 바로 연결할 수 있습니다.
-                        </p>
-                        {getImagePreviewSrc(field) ? (
-                          <img
-                            src={getImagePreviewSrc(field)}
-                            alt={field.label}
-                            className="h-24 w-auto rounded border object-cover"
-                          />
-                        ) : null}
-                      </div>
-                    ) : null}
-                    {field.type === 'font' ? (
-                      <div className="mt-3 space-y-2">
-                        <input
-                          type="file"
-                          accept=".woff2,.woff,.ttf,.otf,font/woff2,font/woff,font/ttf,font/otf"
-                          onChange={(e) =>
-                            onUploadFont(e.target.files?.[0] || null, ({ id, originalName }) => {
-                              const nextWithId = setValueByPath(sectionsObject, field.path, String(id));
-                              const familyPath = getFontFamilyPathByMediaPath(field.path);
-                              const autoFamily = `Sangol${sanitizeFontFamilyToken(originalName)}${id}`;
-                              const next = familyPath ? setValueByPath(nextWithId, familyPath, autoFamily) : nextWithId;
-                              setSectionsObject(next);
-                              setSectionsText(JSON.stringify(next, null, 2));
-                            })
-                          }
-                          disabled={uploading || field.disabled}
-                          className="w-full text-sm rounded-lg border border-gray-300 bg-white file:mr-3 file:rounded-md file:border file:border-gray-300 file:bg-gray-50 file:px-3 file:py-1.5 file:text-sm file:font-medium hover:file:bg-gray-100 disabled:opacity-60 disabled:cursor-not-allowed"
-                        />
-                        <p className="text-xs text-gray-500">
-                          폰트 업로드 가이드: woff2 권장, 최대 20MB. 업로드 후 front 전역 폰트에 자동 반영됩니다.
-                        </p>
-                      </div>
-                    ) : null}
-                  </>
-                ) : null}
+                    </div>
+                  ) : null}
+                  {renderFieldPart(group.fields)}
+                </div>
               </div>
             ))}
           </div>
@@ -1289,19 +1630,23 @@ export function ContentManager({ token }: ContentManagerProps) {
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
           {filteredImageMedia.map((item) => (
             <div key={item.id} className="border rounded-lg p-3">
-              <img src={item.publicUrl} alt={normalizeDisplayFileName(item.originalName)} className="w-full h-28 object-cover rounded-md mb-2" />
+              <img src={getMediaPreviewSrc(item)} alt={normalizeDisplayFileName(item.originalName)} className="w-full h-28 object-cover rounded-md mb-2" />
               <div className="flex items-center justify-between gap-2">
                 <p className="text-xs text-gray-700 truncate">{normalizeDisplayFileName(item.originalName)}</p>
                 {(mediaUsageMap.byId.get(item.id)?.length || 0) > 0 ||
+                (mediaUsageMap.byUrl.get(getMediaPreviewSrc(item))?.length || 0) > 0 ||
                 (mediaUsageMap.byUrl.get(item.publicUrl)?.length || 0) > 0 ? (
                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-100 text-green-700">사용중</span>
                 ) : null}
               </div>
               <p className="text-xs text-gray-500 truncate">ID: {item.id}</p>
-              <p className="text-xs text-gray-500 truncate">{item.publicUrl}</p>
+              <p className="text-xs text-gray-500 truncate">{getMediaPreviewSrc(item)}</p>
               {(() => {
                 const idUsages = mediaUsageMap.byId.get(item.id) ?? [];
-                const urlUsages = mediaUsageMap.byUrl.get(item.publicUrl) ?? [];
+                const urlUsages = [
+                  ...(mediaUsageMap.byUrl.get(getMediaPreviewSrc(item)) ?? []),
+                  ...(mediaUsageMap.byUrl.get(item.publicUrl) ?? []),
+                ];
                 const usageCount = new Set(
                   [...idUsages, ...urlUsages].map((u) => `${u.pageKey}:${u.path}`)
                 ).size;
@@ -1316,7 +1661,7 @@ export function ContentManager({ token }: ContentManagerProps) {
               <div className="mt-2 flex flex-wrap gap-2">
                 <button
                   type="button"
-                  onClick={() => navigator.clipboard.writeText(item.publicUrl)}
+                  onClick={() => navigator.clipboard.writeText(getMediaPreviewSrc(item))}
                   className="px-2 py-1 text-[11px] rounded border border-gray-300 hover:bg-gray-50"
                 >
                   URL 복사
@@ -1371,7 +1716,7 @@ export function ContentManager({ token }: ContentManagerProps) {
                   onClick={() => applyMediaToField(pickerField, item)}
                   className="text-left border rounded-lg p-3 hover:border-green-300 hover:bg-green-50/30"
                 >
-                  <img src={item.publicUrl} alt={normalizeDisplayFileName(item.originalName)} className="w-full h-28 object-cover rounded-md mb-2" />
+                  <img src={getMediaPreviewSrc(item)} alt={normalizeDisplayFileName(item.originalName)} className="w-full h-28 object-cover rounded-md mb-2" />
                   <p className="text-xs font-medium text-gray-800 truncate">{normalizeDisplayFileName(item.originalName)}</p>
                   <p className="text-[11px] text-gray-500 truncate">ID: {item.id}</p>
                 </button>

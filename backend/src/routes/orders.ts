@@ -1,9 +1,7 @@
 import express, { Request, Response } from 'express';
 import pool from '../config/database';
-import jwt from 'jsonwebtoken';
 import { authenticateToken, requireFranchise } from '../middleware/auth';
 import { body, validationResult } from 'express-validator';
-import { env } from '../config/env';
 
 const router = express.Router();
 
@@ -12,28 +10,10 @@ const ensureOrderColumnsReady = async (): Promise<void> => {
   await pool.query('ALTER TABLE orders ADD COLUMN IF NOT EXISTS recipient_name VARCHAR(120);');
 };
 
-const optionalAuthenticateToken = (req: Request, res: Response, next: () => void): void => {
-  const authHeader = req.headers.authorization;
-  const token = authHeader && authHeader.split(' ')[1];
-
-  if (!token) {
-    next();
-    return;
-  }
-
-  jwt.verify(token, env.JWT_SECRET, (err, user) => {
-    if (err) {
-      res.status(403).json({ error: '유효하지 않은 토큰입니다.' });
-      return;
-    }
-    req.user = user as Request['user'];
-    next();
-  });
-};
-
 // 주문 생성
 router.post('/',
-  optionalAuthenticateToken,
+  authenticateToken,
+  requireFranchise,
   body('items').isArray().notEmpty(),
   body('items.*.productId').isInt({ min: 1 }),
   body('items.*.quantity').isInt({ min: 1 }),
@@ -49,10 +29,14 @@ router.post('/',
     }
 
     const { items, deliveryAddress, deliveryPhone, recipientName, deliveryRequest } = req.body;
-    const hasFranchiseUser = Boolean(req.user?.franchiseId && (req.user.role === 'franchise' || req.user.role === 'admin'));
-    const franchiseId = hasFranchiseUser ? req.user?.franchiseId : null;
-    const orderChannel = hasFranchiseUser ? 'b2b' : 'b2c';
+    const franchiseId = req.user?.franchiseId ?? null;
+    const orderChannel = 'b2b';
     const placedByUserId = req.user?.id ?? null;
+
+    if (!franchiseId) {
+      res.status(400).json({ error: '가맹점 계정 정보가 필요합니다.' });
+      return;
+    }
 
     const client = await pool.connect();
 
@@ -64,7 +48,7 @@ router.post('/',
       let resolvedDeliveryPhone: string | null = deliveryPhone ?? null;
       let resolvedRecipientName: string | null = recipientName ?? null;
 
-      if (orderChannel === 'b2b' && franchiseId) {
+      if (franchiseId) {
         const franchiseResult = await client.query<{ name: string; phone: string | null; address: string | null }>(
           `SELECT name, phone, address
            FROM franchises
@@ -80,13 +64,11 @@ router.post('/',
         resolvedRecipientName = resolvedRecipientName || franchise.name || null;
       }
 
-      if (orderChannel === 'b2b') {
-        if (!resolvedDeliveryAddress || !String(resolvedDeliveryAddress).trim()) {
-          throw new Error('배송지는 필수입니다. 가맹점 기본 배송지를 확인해 주세요.');
-        }
-        if (!resolvedDeliveryPhone || !String(resolvedDeliveryPhone).trim()) {
-          throw new Error('연락처는 필수입니다. 가맹점 기본 연락처를 확인해 주세요.');
-        }
+      if (!resolvedDeliveryAddress || !String(resolvedDeliveryAddress).trim()) {
+        throw new Error('배송지는 필수입니다. 가맹점 기본 배송지를 확인해 주세요.');
+      }
+      if (!resolvedDeliveryPhone || !String(resolvedDeliveryPhone).trim()) {
+        throw new Error('연락처는 필수입니다. 가맹점 기본 연락처를 확인해 주세요.');
       }
 
       // 주문 생성
@@ -147,7 +129,7 @@ router.post('/',
       await client.query(
         `INSERT INTO order_status_logs (order_id, from_status, to_status, changed_by_user_id, note)
          VALUES ($1, NULL, 'pending', $2, $3)`,
-        [orderId, placedByUserId, orderChannel === 'b2c' ? '프론트 주문 생성' : '가맹점 주문 생성']
+        [orderId, placedByUserId, '가맹점 주문 생성']
       );
 
       await client.query('COMMIT');
@@ -181,6 +163,7 @@ router.get('/franchise',
         `SELECT o.*,
          (SELECT COALESCE(JSON_AGG(JSON_BUILD_OBJECT(
              'id', oi.id,
+             'productId', oi.product_id,
              'productName', p.name,
              'quantity', oi.quantity,
              'unitPrice', oi.unit_price,

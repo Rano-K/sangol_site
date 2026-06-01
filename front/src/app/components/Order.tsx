@@ -15,8 +15,8 @@ type Item = {
   tax: string;
   price: number;
   category: string;
-  categorySlug: 'forest' | 'agriculture' | 'manufactured';
-  categoryLabel: '임산물' | '농산물' | '제품(가공식품)';
+  categorySlug: 'forest' | 'agriculture' | 'manufactured' | 'wip';
+  categoryLabel: '임산물' | '농산물' | '가공식품' | '재공품';
   stockStatus: 'in_stock' | 'low_stock' | 'out_of_stock';
   stockQuantity: number;
 };
@@ -25,7 +25,8 @@ const CATEGORY_TABS = [
   { id: 'all', label: '전체' },
   { id: 'forest', label: '임산물' },
   { id: 'agriculture', label: '농산물' },
-  { id: 'manufactured', label: '제품(가공식품)' },
+  { id: 'manufactured', label: '가공식품' },
+  { id: 'wip', label: '재공품' },
 ] as const;
 
 type SortKey = "name_asc" | "price_asc" | "stock_asc";
@@ -51,12 +52,15 @@ const getCategoryMeta = (product: any): Pick<Item, 'categorySlug' | 'categoryLab
   const normalizedCategory = String(product.category || '').trim();
   if (normalizedCategory === '임산물') return { categorySlug: 'forest', categoryLabel: '임산물' };
   if (normalizedCategory === '농산물') return { categorySlug: 'agriculture', categoryLabel: '농산물' };
-  if (normalizedCategory === '제품(가공식품)') return { categorySlug: 'manufactured', categoryLabel: '제품(가공식품)' };
+  if (normalizedCategory === '제품(가공식품)') return { categorySlug: 'manufactured', categoryLabel: '가공식품' };
+  if (normalizedCategory === '재공품') return { categorySlug: 'wip', categoryLabel: '재공품' };
 
-  const code = String(product.product_code || '');
-  if (code.startsWith('SG-IM-')) return { categorySlug: 'forest', categoryLabel: '임산물' };
-  if (code.startsWith('SG-AG-')) return { categorySlug: 'agriculture', categoryLabel: '농산물' };
-  return { categorySlug: 'manufactured', categoryLabel: '제품(가공식품)' };
+  const code = String(product.product_code || '').toUpperCase();
+  if (/^FP_/.test(code) || code.startsWith('SG-IM-')) return { categorySlug: 'forest', categoryLabel: '임산물' };
+  if (/^AG_/.test(code) || code.startsWith('SG-AG-')) return { categorySlug: 'agriculture', categoryLabel: '농산물' };
+  if (/^PR_/.test(code) || code.startsWith('SG-PR-')) return { categorySlug: 'manufactured', categoryLabel: '가공식품' };
+  if (/^WIP_/.test(code) || code.startsWith('SG-WIP-')) return { categorySlug: 'wip', categoryLabel: '재공품' };
+  return { categorySlug: 'manufactured', categoryLabel: '가공식품' };
 };
 
 export function Order() {
@@ -84,10 +88,17 @@ export function Order() {
   const [isLoadingPreviousOrders, setIsLoadingPreviousOrders] = useState(false);
   const shouldRedirectToLogin = !isAuthenticated || !user;
   const canUseFranchiseOrder = user?.role === "franchise" || user?.role === "admin";
+  const isFranchiseUser = user?.role === "franchise";
+  const visibleOrderCategoryTabs = useMemo(
+    () => (isFranchiseUser ? CATEGORY_TABS : CATEGORY_TABS.filter((cat) => cat.id !== "wip")),
+    [isFranchiseUser]
+  );
 
   useEffect(() => {
     const run = async () => {
-      const response = await fetch(`${apiBaseUrl}/products`);
+      const headers: HeadersInit = {};
+      if (token) headers.Authorization = `Bearer ${token}`;
+      const response = await fetch(`${apiBaseUrl}/products`, { headers });
       const payload = await response.json();
       if (!response.ok) return;
       const mapped: Item[] = (payload as any[]).map((product) => {
@@ -134,7 +145,7 @@ export function Order() {
       }
     };
     run();
-  }, [apiBaseUrl]);
+  }, [apiBaseUrl, token]);
 
   useEffect(() => {
     const run = async () => {
@@ -373,6 +384,17 @@ export function Order() {
     localStorage.removeItem(FRANCHISE_ORDER_DRAFT_KEY);
   };
 
+  const clearAllSelectedItems = () => {
+    if (orderedItems.length === 0) return;
+    const shouldClear = window.confirm("현재 담긴 주문 항목을 모두 제거하시겠습니까?");
+    if (!shouldClear) return;
+    setQuantities({});
+    setSubmitError("");
+    setToastMessage("담긴 주문 항목을 모두 제거했습니다.");
+    setToastVisible(true);
+    localStorage.removeItem(FRANCHISE_ORDER_DRAFT_KEY);
+  };
+
   if (shouldRedirectToLogin) {
     return <Navigate to="/login" state={{ from: "/order" }} replace />;
   }
@@ -383,13 +405,13 @@ export function Order() {
   return (
     <div className="flex-1 bg-white flex flex-col pb-24">
       <div className="bg-[#1A4D2E] text-white py-12 px-6">
-        <div className="max-w-7xl mx-auto">
+        <div className="site-container">
           <h1 className="text-3xl font-bold mb-2">가맹점 발주 대시보드</h1>
           <p className="text-[#E8DFCA] opacity-90">필요한 품목의 수량을 입력하고 주문을 완료해주세요.</p>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-6 py-8 w-full flex-1 flex flex-col min-h-0">
+      <div className="site-container py-8 w-full flex-1 flex flex-col min-h-0">
         {/* Previous Orders Quick Load */}
         <div className="mb-6 rounded-xl border border-[#DDE7D4] bg-[#FAFAF7] p-4">
           <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
@@ -407,7 +429,33 @@ export function Order() {
                   <p className="text-xs text-gray-500 mb-1">
                     주문 #{order.id} · {order.created_at ? new Date(order.created_at).toLocaleString() : "-"}
                   </p>
-                  <p className="text-sm font-semibold text-[#1A4D2E] mb-2">품목 {order.items.length}개</p>
+                  <div className="mb-2 space-y-1">
+                    <p className="text-sm font-semibold text-[#1A4D2E]">
+                      품목 {order.items.length}종 · 총 수량 {order.items.reduce((sum, item) => sum + Math.max(0, Number(item.quantity || 0)), 0)}개
+                    </p>
+                    <p className="text-xs text-gray-600">수령인: {order.recipient_name || "-"}</p>
+                    <p className="text-xs text-gray-600">연락처: {order.delivery_phone || "-"}</p>
+                    <p className="text-xs text-gray-600 truncate">배송지: {order.delivery_address || "-"}</p>
+                    {order.delivery_request ? (
+                      <p className="text-xs text-gray-600 truncate">요청사항: {order.delivery_request}</p>
+                    ) : null}
+                  </div>
+                  <div className="mb-3 rounded-md border border-[#E7EDE1] bg-[#FAFCF8] px-2.5 py-2">
+                    <p className="text-[11px] font-semibold text-[#5C6B5E] mb-1">주문 품목</p>
+                    <ul className="space-y-1">
+                      {order.items.slice(0, 4).map((item, index) => (
+                        <li key={`${order.id}-${item.productId ?? item.productCode ?? item.productName ?? index}`} className="text-xs text-gray-700 flex items-center justify-between gap-2">
+                          <span className="truncate">
+                            {item.productName || item.productCode || (item.productId ? `상품ID ${item.productId}` : `품목 ${index + 1}`)}
+                          </span>
+                          <span className="shrink-0 font-semibold text-[#1A4D2E]">{Math.max(0, Number(item.quantity || 0))}개</span>
+                        </li>
+                      ))}
+                      {order.items.length > 4 ? (
+                        <li className="text-[11px] text-gray-500">외 {order.items.length - 4}개 품목</li>
+                      ) : null}
+                    </ul>
+                  </div>
                   <button
                     type="button"
                     onClick={() => applyPreviousOrder(order)}
@@ -468,7 +516,7 @@ export function Order() {
         <div className="sticky top-24 z-40 mb-6 rounded-2xl border border-[#E2E8D9] bg-white/95 backdrop-blur px-3 py-3 md:px-4 md:py-4 shadow-sm">
           {/* Category Tabs */}
           <div className="flex flex-wrap gap-2 border-b border-gray-200 pb-4">
-            {CATEGORY_TABS.map((cat) => (
+            {visibleOrderCategoryTabs.map((cat) => (
               <button
                 key={cat.id}
                 onClick={() => setActiveCategory(cat.id)}
@@ -520,7 +568,7 @@ export function Order() {
           <div className="flex-1 min-h-0 pb-32">
             {/* Desktop Table */}
             <div className="hidden md:block">
-              <div className="overflow-x-auto overscroll-contain">
+              <div className="overflow-x-auto overscroll-x-contain">
                 <table className="w-full table-fixed text-left border-collapse min-w-[1100px]">
                   <colgroup>
                     <col className="w-24" />
@@ -612,6 +660,9 @@ export function Order() {
                                 재고 {item.stockQuantity}
                               </span>
                             )}
+                          </td>
+                          <td className="p-4 w-32 text-right font-semibold text-[#1A4D2E]">
+                            {item.price.toLocaleString()}원
                           </td>
                           <td className="p-4 w-32 text-center">
                             <div className="inline-flex items-center justify-center border border-gray-300 rounded-lg overflow-hidden">
@@ -773,6 +824,14 @@ export function Order() {
 
             <div className="w-full md:w-auto flex flex-col sm:flex-row sm:items-center gap-3">
               <button
+                type="button"
+                onClick={clearAllSelectedItems}
+                disabled={orderedItems.length === 0 || isSubmitting}
+                className="w-full sm:w-auto px-6 py-3.5 bg-white border border-[#C8D7BE] text-[#2B4B35] text-base font-semibold rounded-xl hover:bg-[#F3F8EF] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                전체 제거
+              </button>
+              <button
                 onClick={handleOrderClick}
                 disabled={isSubmitting}
                 className="w-full sm:w-auto px-10 py-4 bg-[#1A4D2E] hover:bg-[#123A21] text-white text-xl font-bold rounded-xl shadow-lg transition-transform transform active:scale-95 flex items-center justify-center gap-3 disabled:opacity-60 disabled:cursor-not-allowed"
@@ -813,7 +872,7 @@ export function Order() {
       )}
 
       {toastVisible && toastMessage ? (
-        <div className="fixed bottom-6 right-6 z-[70] transition-opacity duration-200">
+        <div className="fixed left-1/2 -translate-x-1/2 bottom-20 z-[70] transition-opacity duration-200">
           <div className="max-w-sm rounded-xl border border-[#DDE7D4] bg-white/95 px-4 py-3 shadow-xl backdrop-blur">
             <p className="text-sm font-medium text-[#1A4D2E]">{toastMessage}</p>
           </div>

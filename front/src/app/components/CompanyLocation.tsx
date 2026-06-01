@@ -89,7 +89,7 @@ export function CompanyLocation() {
       </div>
       <SectionQuickLinks items={COMPANY_QUICK_LINKS} />
 
-      <div className="max-w-7xl mx-auto px-6 py-20 md:py-32 w-full flex flex-col gap-24">
+      <div className="site-container py-20 md:py-32 w-full flex flex-col gap-24">
         
         {/* Head Office & Direct Store Section */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">

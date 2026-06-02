@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
-    "start": "node dist/server.js",
+    "start": "tsx src/server.ts",
     "migrate": "tsx src/database/migrations/run.ts",
     "seed:dev-admin": "tsx src/scripts/seedDevAdmin.ts",
     "seed:cms-content": "tsx src/scripts/seedCmsContent.ts",
@@ -37,7 +37,8 @@
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.1.1",
     "pg": "^8.20.0",
-    "swagger-ui-express": "^5.0.1"
+    "swagger-ui-express": "^5.0.1",
+    "tsx": "^4.7.2"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
@@ -47,7 +48,6 @@
     "@types/node": "^20.12.7",
     "@types/pg": "^8.20.0",
     "@types/swagger-ui-express": "^4.1.8",
-    "tsx": "^4.7.2",
     "typescript": "^5.4.5"
   }
 }

@@ -83,14 +83,12 @@ export function MyPage() {
       ? ((orderCms.sections as Record<string, unknown>).payment as Record<string, unknown> | undefined)
       : undefined;
   const depositAccountName =
-    (typeof paymentSection?.accountName === "string" && paymentSection.accountName.trim()) ||
-    ((import.meta.env["VITE_B2B_DEPOSIT_ACCOUNT_NAME"] as string | undefined) ?? "");
+    typeof paymentSection?.accountName === "string" ? paymentSection.accountName.trim() : "";
   const depositAccountNumber =
-    (typeof paymentSection?.accountNumber === "string" && paymentSection.accountNumber.trim()) ||
-    ((import.meta.env["VITE_B2B_DEPOSIT_ACCOUNT_NUMBER"] as string | undefined) ?? "");
+    typeof paymentSection?.accountNumber === "string" ? paymentSection.accountNumber.trim() : "";
   const requiredNotice =
-    (typeof paymentSection?.requiredNotice === "string" && paymentSection.requiredNotice.trim()) ||
-    "※ 반드시 입금 후 주문을 확정해 주세요. 미입금 시 출고가 진행되지 않습니다.";
+    typeof paymentSection?.requiredNotice === "string" ? paymentSection.requiredNotice.trim() : "";
+  const hasPaymentInfo = Boolean(depositAccountName || depositAccountNumber || requiredNotice);
 
   const runSafely = async (key: string, fn: () => Promise<void>, fallbackError: string) => {
     try {
@@ -161,6 +159,14 @@ export function MyPage() {
     void loadFranchiseOrders();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canUseFranchiseOrder, token]);
+
+  useEffect(() => {
+    if (location.hash !== "#franchise-orders" || !canUseFranchiseOrder) return;
+    const timer = window.setTimeout(() => {
+      document.getElementById("franchise-orders")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 100);
+    return () => window.clearTimeout(timer);
+  }, [location.hash, canUseFranchiseOrder, franchiseOrders.length]);
 
   if (shouldRedirectToLogin) {
     return <Navigate to="/login" state={{ from: "/mypage" }} replace />;
@@ -363,7 +369,7 @@ export function MyPage() {
         ) : null}
 
         {canUseFranchiseOrder ? (
-          <div className="bg-white border border-[#E2E8D9] rounded-3xl p-6 shadow-sm">
+          <div id="franchise-orders" className="bg-white border border-[#E2E8D9] rounded-3xl p-6 shadow-sm scroll-mt-24">
             <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
               <h2 className="text-xl font-bold text-[#1A4D2E]">가맹점 주문 내역</h2>
               <Link
@@ -373,12 +379,20 @@ export function MyPage() {
                 신규 주문
               </Link>
             </div>
-            <div className="mb-4 rounded-2xl border border-[#D7E2CE] bg-[#F7FAF5] p-4">
-              <p className="text-xs font-semibold text-[#65725F]">입금 계좌 안내</p>
-              <p className="mt-1 text-sm font-bold text-[#1A4D2E]">{depositAccountName || "계좌명을 관리자에서 설정해 주세요."}</p>
-              <p className="text-sm font-semibold text-[#1A4D2E]">{depositAccountNumber || "계좌번호를 관리자에서 설정해 주세요."}</p>
-              <p className="mt-2 text-sm font-extrabold text-red-600">{requiredNotice}</p>
-            </div>
+            {hasPaymentInfo ? (
+              <div className="mb-4 rounded-2xl border border-[#D7E2CE] bg-[#F7FAF5] p-4">
+                <p className="text-xs font-semibold text-[#65725F]">입금 계좌 안내</p>
+                {depositAccountName ? (
+                  <p className="mt-1 text-sm font-bold text-[#1A4D2E]">{depositAccountName}</p>
+                ) : null}
+                {depositAccountNumber ? (
+                  <p className="text-sm font-semibold text-[#1A4D2E]">{depositAccountNumber}</p>
+                ) : null}
+                {requiredNotice ? (
+                  <p className="mt-2 text-sm font-extrabold text-red-600">{requiredNotice}</p>
+                ) : null}
+              </div>
+            ) : null}
             {loadingOrders ? (
               <p className="text-sm text-[#6D7568]">주문 내역을 불러오는 중...</p>
             ) : franchiseOrders.length === 0 ? (

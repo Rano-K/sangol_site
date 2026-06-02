@@ -52,6 +52,10 @@ export function Layout() {
     getCmsMediaFileUrl(Number.isFinite(footerLogoMediaId) && footerLogoMediaId > 0 ? footerLogoMediaId : null) ||
     CMS_IMAGE_FALLBACK;
   const topNotice = String(topMenu.noticeText ?? "").trim();
+  const loginLabel = String(topMenu.loginLabel ?? "").trim();
+  const loginLink = String(topMenu.loginLink ?? "").trim() || "/login";
+  const mypageLabel = String(topMenu.mypageLabel ?? "").trim();
+  const mypageLink = String(topMenu.mypageLink ?? "").trim() || "/mypage";
   const { user, isAuthenticated, logout } = useAuth();
   const isFranchiseUser = user?.role === "franchise";
   const [searchKeyword, setSearchKeyword] = useState("");
@@ -150,9 +154,11 @@ export function Layout() {
               <>
                 <span className="text-[#F5F2E4] whitespace-nowrap">{user?.name || "사용자"}님</span>
                 <span className="opacity-50">|</span>
-                <Link to="/mypage" className="hover:text-white transition-colors whitespace-nowrap">
-                  {topMenu.mypageLabel || "마이페이지"}
-                </Link>
+                {mypageLabel ? (
+                  <Link to={mypageLink} className="hover:text-white transition-colors whitespace-nowrap">
+                    {mypageLabel}
+                  </Link>
+                ) : null}
                 <span className="opacity-50">|</span>
                 <button type="button" onClick={logout} className="hover:text-white transition-colors whitespace-nowrap">
                   로그아웃
@@ -160,13 +166,17 @@ export function Layout() {
               </>
             ) : (
               <>
-                <Link to="/login" className="hover:text-white transition-colors whitespace-nowrap">
-                  {topMenu.loginLabel || "가맹점 로그인"}
-                </Link>
-                <span className="opacity-50">|</span>
-                <Link to="/mypage" className="hover:text-white transition-colors whitespace-nowrap">
-                  {topMenu.mypageLabel || "마이페이지"}
-                </Link>
+                {loginLabel ? (
+                  <Link to={loginLink} className="hover:text-white transition-colors whitespace-nowrap">
+                    {loginLabel}
+                  </Link>
+                ) : null}
+                {loginLabel && mypageLabel ? <span className="opacity-50">|</span> : null}
+                {mypageLabel ? (
+                  <Link to={mypageLink} className="hover:text-white transition-colors whitespace-nowrap">
+                    {mypageLabel}
+                  </Link>
+                ) : null}
               </>
             )}
           </div>
@@ -210,7 +220,7 @@ export function Layout() {
             </button>
             <button
               type="button"
-              onClick={() => navigate("/mypage")}
+              onClick={() => navigate(mypageLink)}
               className="p-2 rounded-full hover:bg-[#F4F6EF] transition-colors"
               aria-label="마이페이지"
             >

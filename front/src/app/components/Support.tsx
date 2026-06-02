@@ -98,7 +98,7 @@ function NoticeList({ notices }: { notices: NoticeRow[] }) {
   );
 }
 
-function InquiryForm({ privacyText }: { privacyText: string }) {
+function InquiryForm({ privacyText, introText }: { privacyText: string; introText: string }) {
   const [agreed, setAgreed] = useState(false);
   const apiBaseUrl = useMemo(() => API_BASE_URL, []);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -150,7 +150,11 @@ function InquiryForm({ privacyText }: { privacyText: string }) {
   return (
     <div className="animate-in fade-in duration-500">
       <h2 className="text-2xl font-bold text-gray-800 mb-2">온라인 문의</h2>
-      <p className="text-gray-500 mb-8 pb-4 border-b-2 border-[#1A4D2E]">무엇을 도와드릴까요? 궁금하신 점을 남겨주시면 빠르게 답변해 드리겠습니다.</p>
+      {introText ? (
+        <p className="text-gray-500 mb-8 pb-4 border-b-2 border-[#1A4D2E]">{introText}</p>
+      ) : (
+        <div className="mb-8 pb-4 border-b-2 border-[#1A4D2E]" />
+      )}
       
       <form className="space-y-6" onSubmit={async (e: FormEvent) => {
         e.preventDefault();
@@ -409,9 +413,14 @@ export function Support() {
   const sections = (data?.sections ?? {}) as Record<string, unknown>;
   const header = (sections.header ?? {}) as Record<string, string>;
   const consult = (sections.consult ?? {}) as Record<string, string>;
-  const privacyText =
-    String(sections.privacyText || "") ||
-    "1. 수집하는 개인정보 항목: 이름, 연락처, 이메일\n2. 수집 및 이용 목적: 문의 내역 확인 및 답변 처리, 처리 내역 안내\n3. 보유 및 이용 기간: 문의 처리 완료 후 3년간 보관\n* 귀하는 개인정보 수집 및 이용에 거부할 권리가 있으나, 거부 시 문의 접수 및 답변이 제한될 수 있습니다.";
+  const privacyText = String(sections.privacyText ?? "").trim();
+  const headerTitle = String(header.title ?? "").trim();
+  const headerSubtitle = String(header.subtitle ?? "").trim();
+  const consultPhone = String(consult.phone ?? "").trim();
+  const consultWeekday = String(consult.weekday ?? "").trim();
+  const consultLunch = String(consult.lunch ?? "").trim();
+  const consultClosed = String(consult.closed ?? "").trim();
+  const hasConsultHours = Boolean(consultPhone || consultWeekday || consultLunch || consultClosed);
   const [notices, setNotices] = useState<NoticeRow[]>([]);
   const faqs =
     Array.isArray(sections.faqs) && sections.faqs.length > 0
@@ -438,8 +447,12 @@ export function Support() {
           }}
         />
         <div className="site-container text-center relative z-10">
-          <h1 className="text-3xl md:text-5xl font-extrabold tracking-tight mb-4">{header.title || "고객센터"}</h1>
-          <p className="text-[#E8DFCA] text-lg font-medium">{header.subtitle || "무엇을 도와드릴까요? 산골의 고객센터입니다."}</p>
+          {headerTitle ? (
+            <h1 className="text-3xl md:text-5xl font-extrabold tracking-tight mb-4">{headerTitle}</h1>
+          ) : null}
+          {headerSubtitle ? (
+            <p className="text-[#E8DFCA] text-lg font-medium">{headerSubtitle}</p>
+          ) : null}
         </div>
       </div>
 
@@ -476,21 +489,31 @@ export function Support() {
             </nav>
           </div>
           
+          {hasConsultHours ? (
           <div className="bg-[#F0F2EB] rounded-2xl p-6 border border-[#D5DCCC] shadow-sm sticky top-[420px]">
             <h3 className="text-[#1A4D2E] font-bold mb-2 text-sm">고객센터 상담시간</h3>
-            <p className="text-3xl font-extrabold text-gray-800 mb-3 tracking-tight">{consult.phone || "-"}</p>
+            {consultPhone ? (
+              <p className="text-3xl font-extrabold text-gray-800 mb-3 tracking-tight">{consultPhone}</p>
+            ) : null}
             <div className="text-sm text-gray-600 space-y-1.5 font-medium">
-              <p className="flex justify-between"><span>평일</span> <span className="text-gray-800 font-bold">{consult.weekday || "09:00 - 18:00"}</span></p>
-              <p className="flex justify-between"><span>점심</span> <span className="text-gray-800 font-bold">{consult.lunch || "12:00 - 13:00"}</span></p>
-              <p className="text-[#1A4D2E] pt-2 border-t border-[#D5DCCC] mt-2 font-bold">{consult.closed || "주말 및 공휴일 휴무"}</p>
+              {consultWeekday ? (
+                <p className="flex justify-between"><span>평일</span> <span className="text-gray-800 font-bold">{consultWeekday}</span></p>
+              ) : null}
+              {consultLunch ? (
+                <p className="flex justify-between"><span>점심</span> <span className="text-gray-800 font-bold">{consultLunch}</span></p>
+              ) : null}
+              {consultClosed ? (
+                <p className="text-[#1A4D2E] pt-2 border-t border-[#D5DCCC] mt-2 font-bold">{consultClosed}</p>
+              ) : null}
             </div>
           </div>
+          ) : null}
         </aside>
 
         {/* Main Content Area */}
         <main className="flex-1 min-w-0 bg-white rounded-2xl shadow-sm border border-[#E8DFCA] p-5 sm:p-6 md:p-8 min-h-[600px]">
           {activeTab === 'notice' && <NoticeList notices={notices} />}
-          {activeTab === 'inquiry' && <InquiryForm privacyText={privacyText} />}
+          {activeTab === 'inquiry' && <InquiryForm privacyText={privacyText} introText={headerSubtitle} />}
           {activeTab === 'faq' && <FaqList faqs={faqs} />}
         </main>
       </div>

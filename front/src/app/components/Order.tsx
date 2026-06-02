@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ShoppingCart } from "lucide-react";
-import { Navigate } from "react-router";
+import { Navigate, useNavigate } from "react-router";
+import { FRANCHISE_ORDERS_HISTORY_PATH } from "./ReceiptModal";
 import { ReceiptModal } from "./ReceiptModal";
 import { OrderCartPreviewModal } from "./OrderCartPreviewModal";
 import { useAuth } from "../hooks/useAuth";
@@ -65,6 +66,7 @@ const getCategoryMeta = (product: any): Pick<Item, 'categorySlug' | 'categoryLab
 
 export function Order() {
   const { isAuthenticated, user, token } = useAuth();
+  const navigate = useNavigate();
   const apiBaseUrl = useMemo(() => API_BASE_URL, []);
   const FRANCHISE_ORDER_DRAFT_KEY = "sangol_franchise_order_draft";
   const [activeCategory, setActiveCategory] = useState<(typeof CATEGORY_TABS)[number]['id']>('all');
@@ -382,6 +384,11 @@ export function Order() {
     setCreatedOrderId(undefined);
     setSubmitError("");
     localStorage.removeItem(FRANCHISE_ORDER_DRAFT_KEY);
+  };
+
+  const goToOrderHistory = () => {
+    resetOrder();
+    navigate(FRANCHISE_ORDERS_HISTORY_PATH);
   };
 
   const clearAllSelectedItems = () => {
@@ -846,12 +853,14 @@ export function Order() {
 
       {/* Modal */}
       {isModalOpen && (
-        <ReceiptModal 
-          items={orderedItems} 
-          total={totalAmount} 
+        <ReceiptModal
+          items={orderedItems}
+          total={totalAmount}
           orderId={createdOrderId}
           onClose={() => setIsModalOpen(false)}
           onConfirm={resetOrder}
+          orderHistoryPath={FRANCHISE_ORDERS_HISTORY_PATH}
+          onGoToOrderHistory={goToOrderHistory}
         />
       )}
 

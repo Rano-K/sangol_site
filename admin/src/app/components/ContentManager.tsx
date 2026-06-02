@@ -5,8 +5,9 @@ import type { CmsFieldConfig } from './cms/CmsFieldEditorCard';
 import { groupFieldsIntoParts } from './cms/cmsFieldGrouping';
 import { CmsPageOverviewPreview } from './cms/CmsPageWireframe';
 import { getFrontPreviewUrl } from './cms/cmsFieldPlacementMeta';
-import { CMS_FIXED_LINK_VALUES_BY_PAGE, resolveCmsFieldLink } from './cms/cmsFieldLinkMeta';
+import { resolveCmsFieldLink } from './cms/cmsFieldLinkMeta';
 import { API_BASE_URL } from '../lib/apiBaseUrl';
+import { CMS_PAGE_TITLES, PAGE_SECTION_SCHEMAS } from '../lib/cmsPageSchemas';
 
 type CmsPage = {
   pageKey: string;
@@ -69,146 +70,6 @@ const PRESET_PAGE_KEYS = [
 ];
 const PRESET_PAGE_KEY_SET = new Set(PRESET_PAGE_KEYS);
 
-const PAGE_SECTION_TEMPLATES: Record<string, Record<string, unknown>> = {
-  'site-layout': {
-    topMenu: {
-      loginLabel: '가맹점 로그인',
-      mypageLabel: '마이페이지',
-      noticeText: '',
-    },
-    footer: {
-      ownerName: '정현철',
-      address: '강원특별자치도 화천군 사내면 검단길 213-49',
-      csPhone: '1522-4680',
-      fax: '02-784-8222',
-      email: 'sangol2017@naver.com',
-      copyright: 'Copyright(c) 농업법인㈜산골. All Rights Reserved.',
-    },
-    logo: {
-      headerLogoMediaId: '',
-      footerLogoMediaId: '',
-    },
-    typography: {
-      enabled: true,
-      fontMediaId: '',
-      fontMediaIdEn: '',
-      fontFamilyName: '',
-      fontFamilyNameEn: '',
-    },
-  },
-  home: {
-    hero: {
-      subtitle: '강원도 화천 청정 두메산골에서 자란 명품 임산물과 고냉지 농산물',
-      title: '자연의 생명력을 그대로 담아,\n(주)산골이 건강한 약속을 전합니다',
-      subtitle2: '',
-    },
-    heroActions: [
-      { label: '상품 둘러보기', link: '/products/forest', variant: 'primary' },
-    ],
-    trustBadges: [
-      { title: '안전한 원산지', desc: '산지 추적 관리', iconUrl: 'https://img.icons8.com/color/96/certificate.png' },
-      { title: '품질 인증', desc: '엄격한 선별 기준', iconUrl: 'https://img.icons8.com/color/96/medal2.png' },
-      { title: '빠른 배송', desc: '신선도 우선 출고', iconUrl: 'https://img.icons8.com/color/96/delivery.png' },
-      { title: '검수 완료', desc: '출고 전 품질 점검', iconUrl: 'https://img.icons8.com/color/96/checked--v1.png' },
-    ],
-    intro: {
-      iconUrl: '',
-      title: '"신뢰를 바탕으로 건강한 먹거리를 공급합니다"',
-      description1: '금융권 경력을 뒤로하고 고향으로 돌아와 설립한 농업법인 (주)산골은\n강원도 화천의 맑은 자연이 주는 선물에 정성을 더해 명품 임산물을 키워냅니다.',
-      description2: '사람과 자연의 조화, 그리고 정직과 신뢰의 경영 철학으로\n지속가능한 체험·가공·관광 농업의 비전을 실현하며 K-푸드 프리미엄 브랜드로 도약하겠습니다.',
-    },
-    support: {
-      phone: '1522-4680',
-      notice: '주말 및 공휴일은 상담 불가하므로\n평일 업무 시간 내 문의 부탁드립니다.',
-    },
-  },
-  order: {
-    payment: {
-      accountName: '농업회사법인(주)산골',
-      accountNumber: '입금 계좌는 고객센터(1522-4680)로 문의해 주세요.',
-      requiredNotice: '※ 반드시 입금 후 주문을 확정해 주세요. 미입금 시 출고가 진행되지 않습니다.',
-    },
-  },
-  'company-greeting': {
-    headerTitle: '인사말',
-    headerSubtitle: '자연의 가치를 지키는 농업법인 (주)산골입니다.',
-    messageTitle: '신뢰로 키우고,\n명품으로 보답하겠습니다.',
-  },
-  'company-history': {
-    header: { title: '연혁', subtitle: '자연과 함께 걸어온 (주)산골의 발자취입니다.' },
-    body: {
-      title: '농업회사법인 (주)산골 연혁',
-      subtitle: '2017년 설립부터 현재까지, 신뢰와 정직으로 성장해온 기록입니다.',
-    },
-  },
-  'company-awards': {
-    header: { title: '수상 및 인증', subtitle: '엄격한 기준을 통과한 산골의 자부심입니다.' },
-    body: {
-      title: '국가가 인정한 프리미엄 임산물',
-      subtitle: '청정 숲에서 자란 우수한 품질을 증명하는 인증 내역과 혜택 안내입니다.',
-    },
-  },
-  'company-location': {
-    header: { title: '오시는 길', subtitle: '본사·직영점 및 가맹점 안내' },
-    headOffice: {
-      title: '본사(농장)',
-      subTitle: '강원 화천 두메산골',
-      address: '강원특별자치도 화천군 사내면 검단길 213-49',
-      phone: '1522-4680',
-      fax: '02-784-8222',
-    },
-    directStore: {
-      title: '직영점 : 잠실 콩밭',
-      subTitle: '서울 송파',
-      address: '서울특별시 송파구 석촌호수로84 107호',
-      phone: '1522-4680',
-      fax: '02-784-8222',
-    },
-  },
-  'business-philosophy': {
-    header: { title: '경영철학', subtitle: '농업회사법인 (주)산골이 추구하는 변하지 않는 가치' },
-    intro: {
-      title: '자연과 사람이 함께 만드는\n프리미엄 임산물',
-      description:
-        '(주)산골은 자연의 순리를 따르며, 바른 먹거리를 통해 고객의 건강한 삶과\n지속 가능한 미래를 책임집니다.',
-    },
-  },
-  'business-vision': {
-    header: { title: '비전', subtitle: '지속가능한 체험·가공·관광 농업으로 K-푸드 프리미엄 브랜드' },
-  },
-  'business-core-competence': {
-    header: { title: '핵심 역량', subtitle: '자연이 허락한 최고의 재료와 깐깐한 고집이 만든 자부심' },
-    intro: {
-      title: '자연과 사람이 피워낸\n프리미엄의 완성',
-      description:
-        '(주)산골은 깨끗한 자연이 주는 잠재력에 타협 없는 기술력과 관리 시스템을 더해,\n독보적인 프리미엄 임산물의 새로운 기준을 제시합니다.',
-    },
-  },
-  'business-farm': {
-    header: { title: '농장 소개', subtitle: '자연 그대로의 방식을 고집하는 산골의 청정 농장' },
-    body: {
-      title: '자연과 사람이 피워낸 건강한 먹거리',
-      description:
-        '농업 법인(주)산골은 청정 두메산골에서 가장 친환경적인 방식으로 재배하며, 정직과 신뢰를 바탕으로 자연의 가치를 지키고 건강과 행복을 더합니다.',
-    },
-  },
-  support: {
-    header: {
-      title: '고객센터',
-      subtitle: '무엇을 도와드릴까요? 산골의 고객센터입니다.',
-    },
-    consult: {
-      phone: '1522-4680',
-      weekday: '09:00 - 18:00',
-      lunch: '12:00 - 13:00',
-      closed: '주말 및 공휴일 휴무',
-    },
-    privacyText:
-      '1. 수집하는 개인정보 항목: 이름, 연락처, 이메일\n2. 수집 및 이용 목적: 문의 내역 확인 및 답변 처리, 처리 내역 안내\n3. 보유 및 이용 기간: 문의 처리 완료 후 3년간 보관\n* 귀하는 개인정보 수집 및 이용에 거부할 권리가 있으나, 거부 시 문의 접수 및 답변이 제한될 수 있습니다.',
-    faqs: [],
-  },
-};
-
 const PAGE_KEY_DESCRIPTIONS: Record<string, { label: string; description: string }> = {
   'site-layout': {
     label: '공통 레이아웃',
@@ -263,7 +124,21 @@ const PAGE_KEY_DESCRIPTIONS: Record<string, { label: string; description: string
 const PAGE_FIELD_CONFIGS: Record<string, FieldConfig[]> = {
   'site-layout': [
     { path: 'topMenu.loginLabel', label: '상단 메뉴 > 로그인', description: '상단 우측 로그인 메뉴 문구', type: 'text' },
+    {
+      path: 'topMenu.loginLink',
+      label: '상단 메뉴 > 로그인 이동 경로',
+      description: '예: /login',
+      type: 'text',
+      placeholder: '/login',
+    },
     { path: 'topMenu.mypageLabel', label: '상단 메뉴 > 마이페이지', description: '상단 우측 마이페이지 문구', type: 'text' },
+    {
+      path: 'topMenu.mypageLink',
+      label: '상단 메뉴 > 마이페이지 이동 경로',
+      description: '예: /mypage',
+      type: 'text',
+      placeholder: '/mypage',
+    },
     { path: 'topMenu.noticeText', label: '상단 공지 문구', description: '헤더 최상단 중앙에 노출되는 혜택 문구', type: 'text' },
     {
       path: 'logo.headerLogoMediaId',
@@ -309,34 +184,93 @@ const PAGE_FIELD_CONFIGS: Record<string, FieldConfig[]> = {
     { path: 'hero.title', label: '메인 비주얼 > 메인 문구', description: '히어로 중앙 H1 텍스트 (줄바꿈은 Enter)', type: 'textarea' },
     { path: 'hero.subtitle2', label: '메인 비주얼 > 보조 문구 2', description: '메인 문구(H1) 바로 아래 보조 텍스트', type: 'text' },
     { path: 'heroActions.0.label', label: '히어로 버튼 문구', description: '메인 CTA 버튼 문구', type: 'text' },
+    {
+      path: 'heroActions.0.link',
+      label: '히어로 버튼 이동 경로',
+      description: '예: /products/forest',
+      type: 'text',
+      placeholder: '/products/forest',
+    },
     { path: 'heroActions.0.variant', label: '히어로 버튼 스타일', description: 'primary 또는 outline', type: 'text' },
     { path: 'heroImages.0', label: '메인 비주얼 이미지 1', description: '첫 번째 슬라이드 배경 이미지', type: 'image', imageValueType: 'url' },
     { path: 'heroImages.1', label: '메인 비주얼 이미지 2', description: '두 번째 슬라이드 배경 이미지', type: 'image', imageValueType: 'url' },
     { path: 'heroImages.2', label: '메인 비주얼 이미지 3', description: '세 번째 슬라이드 배경 이미지', type: 'image', imageValueType: 'url' },
     { path: 'trustBadges.0.title', label: '신뢰배지 1 제목', description: '상단 신뢰배지 타이틀', type: 'text' },
     { path: 'trustBadges.0.desc', label: '신뢰배지 1 설명', description: '짧은 부가설명', type: 'text' },
-    { path: 'trustBadges.0.iconUrl', label: '신뢰배지 1 아이콘 URL', description: '아이콘 이미지 링크', type: 'text', placeholder: 'https://img.icons8.com/color/96/certificate.png' },
+    {
+      path: 'trustBadges.0.iconMediaId',
+      label: '신뢰배지 1 아이콘',
+      description: '공용 이미지함에서 선택',
+      type: 'image',
+      imageValueType: 'mediaId',
+    },
     { path: 'trustBadges.1.title', label: '신뢰배지 2 제목', description: '상단 신뢰배지 타이틀', type: 'text' },
     { path: 'trustBadges.1.desc', label: '신뢰배지 2 설명', description: '짧은 부가설명', type: 'text' },
-    { path: 'trustBadges.1.iconUrl', label: '신뢰배지 2 아이콘 URL', description: '아이콘 이미지 링크', type: 'text', placeholder: 'https://img.icons8.com/color/96/medal2.png' },
+    {
+      path: 'trustBadges.1.iconMediaId',
+      label: '신뢰배지 2 아이콘',
+      description: '공용 이미지함에서 선택',
+      type: 'image',
+      imageValueType: 'mediaId',
+    },
     { path: 'trustBadges.2.title', label: '신뢰배지 3 제목', description: '상단 신뢰배지 타이틀', type: 'text' },
     { path: 'trustBadges.2.desc', label: '신뢰배지 3 설명', description: '짧은 부가설명', type: 'text' },
-    { path: 'trustBadges.2.iconUrl', label: '신뢰배지 3 아이콘 URL', description: '아이콘 이미지 링크', type: 'text', placeholder: 'https://img.icons8.com/color/96/delivery.png' },
+    {
+      path: 'trustBadges.2.iconMediaId',
+      label: '신뢰배지 3 아이콘',
+      description: '공용 이미지함에서 선택',
+      type: 'image',
+      imageValueType: 'mediaId',
+    },
     { path: 'trustBadges.3.title', label: '신뢰배지 4 제목', description: '상단 신뢰배지 타이틀', type: 'text' },
     { path: 'trustBadges.3.desc', label: '신뢰배지 4 설명', description: '짧은 부가설명', type: 'text' },
-    { path: 'trustBadges.3.iconUrl', label: '신뢰배지 4 아이콘 URL', description: '아이콘 이미지 링크', type: 'text', placeholder: 'https://img.icons8.com/color/96/checked--v1.png' },
+    {
+      path: 'trustBadges.3.iconMediaId',
+      label: '신뢰배지 4 아이콘',
+      description: '공용 이미지함에서 선택',
+      type: 'image',
+      imageValueType: 'mediaId',
+    },
     { path: 'features.0.title', label: '핵심역량 카드 1 제목', description: '메인 중단 카드 영역 텍스트', type: 'text' },
     { path: 'features.0.desc', label: '핵심역량 카드 1 설명', description: '메인 중단 카드 영역 설명', type: 'textarea' },
     { path: 'features.0.img', label: '핵심역량 카드 1 이미지', description: '메인 중단 카드 이미지', type: 'image', imageValueType: 'url' },
+    {
+      path: 'features.0.link',
+      label: '핵심역량 카드 1 이동 경로',
+      description: '예: /business/core-competence',
+      type: 'text',
+      placeholder: '/business/core-competence',
+    },
     { path: 'features.1.title', label: '핵심역량 카드 2 제목', description: '메인 중단 카드 영역 텍스트', type: 'text' },
     { path: 'features.1.desc', label: '핵심역량 카드 2 설명', description: '메인 중단 카드 영역 설명', type: 'textarea' },
     { path: 'features.1.img', label: '핵심역량 카드 2 이미지', description: '메인 중단 카드 이미지', type: 'image', imageValueType: 'url' },
+    {
+      path: 'features.1.link',
+      label: '핵심역량 카드 2 이동 경로',
+      description: '예: /company/awards',
+      type: 'text',
+      placeholder: '/company/awards',
+    },
     { path: 'features.2.title', label: '핵심역량 카드 3 제목', description: '메인 중단 카드 영역 텍스트', type: 'text' },
     { path: 'features.2.desc', label: '핵심역량 카드 3 설명', description: '메인 중단 카드 영역 설명', type: 'textarea' },
     { path: 'features.2.img', label: '핵심역량 카드 3 이미지', description: '메인 중단 카드 이미지', type: 'image', imageValueType: 'url' },
+    {
+      path: 'features.2.link',
+      label: '핵심역량 카드 3 이동 경로',
+      description: '예: /company/awards',
+      type: 'text',
+      placeholder: '/company/awards',
+    },
     { path: 'features.3.title', label: '핵심역량 카드 4 제목', description: '메인 중단 카드 영역 텍스트', type: 'text' },
     { path: 'features.3.desc', label: '핵심역량 카드 4 설명', description: '메인 중단 카드 영역 설명', type: 'textarea' },
     { path: 'features.3.img', label: '핵심역량 카드 4 이미지', description: '메인 중단 카드 이미지', type: 'image', imageValueType: 'url' },
+    {
+      path: 'features.3.link',
+      label: '핵심역량 카드 4 이동 경로',
+      description: '예: /business/farm',
+      type: 'text',
+      placeholder: '/business/farm',
+    },
     { path: 'intro.iconUrl', label: '브랜드 스토리 > 상단 아이콘', description: '리프 아이콘 대신 사용할 이미지(URL)', type: 'image', imageValueType: 'url' },
     { path: 'intro.title', label: '브랜드 스토리 > 제목', description: '예: "신뢰를 바탕으로 건강한 먹거리를 공급합니다"', type: 'text' },
     { path: 'intro.description1', label: '브랜드 스토리 > 본문 1', description: '메인 중단 브랜드 스토리 영역 첫 번째 문단', type: 'textarea' },
@@ -456,9 +390,7 @@ const guessFieldType = (path: string, value: unknown): FieldType => {
   return 'text';
 };
 
-const isFixedLinkField = (path: string): boolean => /(^|\.)link$/i.test(path);
 const shouldHideFieldInAdmin = (pageKey: string, path: string): boolean => {
-  if (/(\.|^)link$/i.test(path)) return true;
   if (pageKey === 'site-layout' && /^typography\.(heading|body)Font/i.test(path)) return true;
   if (pageKey === 'site-layout' && /^typography\.fontFamilyName/i.test(path)) return true;
   if (pageKey === 'site-layout' && /^logo\.(header|footer)LogoUrl$/i.test(path)) return true;
@@ -495,15 +427,13 @@ const collectAutoFieldConfigs = (obj: unknown, prefix = '', depth = 0): FieldCon
 
   if (['string', 'number', 'boolean'].includes(typeof obj)) {
     const fieldType = guessFieldType(prefix, obj);
-    const disabled = isFixedLinkField(prefix);
     return [
       {
         path: prefix,
         label: toLabelFromPath(prefix),
-        description: disabled ? '화면 이동 경로는 코드에서 고정되어 수정할 수 없습니다.' : '페이지 내부 값',
+        description: /(^|\.)link$/i.test(prefix) ? '클릭 시 이동할 사이트 내부 경로' : '페이지 내부 값',
         type: fieldType,
         imageValueType: fieldType === 'image' ? guessImageValueType(prefix) : undefined,
-        disabled,
       },
     ];
   }
@@ -568,16 +498,6 @@ const setValueByPath = (obj: Record<string, unknown>, path: string, value: unkno
   return draft;
 };
 
-const applyFixedLinkValues = (pageKey: string, sections: Record<string, unknown>): Record<string, unknown> => {
-  const fixedLinks = CMS_FIXED_LINK_VALUES_BY_PAGE[pageKey];
-  if (!fixedLinks) return sections;
-
-  return Object.entries(fixedLinks).reduce(
-    (nextSections, [path, value]) => setValueByPath(nextSections, path, value),
-    sections
-  );
-};
-
 const normalizeHomeSectionsKeys = (pageKey: string, sections: Record<string, unknown>): Record<string, unknown> => {
   if (pageKey !== 'home') return sections;
   const next = JSON.parse(JSON.stringify(sections || {})) as Record<string, unknown>;
@@ -593,7 +513,7 @@ const normalizeHomeSectionsKeys = (pageKey: string, sections: Record<string, unk
 };
 
 const mergeTemplateSections = (pageKey: string, sections: Record<string, unknown>): Record<string, unknown> => {
-  const template = PAGE_SECTION_TEMPLATES[pageKey];
+  const template = PAGE_SECTION_SCHEMAS[pageKey];
   if (!template) return sections;
 
   const mergeDeep = (base: unknown, current: unknown): unknown => {
@@ -741,7 +661,7 @@ export function ContentManager({ token }: ContentManagerProps) {
       if (response.status === 404) {
         setTitle('');
         const templateSections = mergeTemplateSections(pageKey, {});
-        const nextSections = applyFixedLinkValues(pageKey, normalizeHomeSectionsKeys(pageKey, templateSections));
+        const nextSections = normalizeHomeSectionsKeys(pageKey, templateSections);
         setSectionsObject(nextSections);
         setSectionsText(JSON.stringify(nextSections, null, 2));
         setSeoText('{}');
@@ -757,9 +677,8 @@ export function ContentManager({ token }: ContentManagerProps) {
     const withLogo = pageKey === 'site-layout' ? normalizeLogoSections(mergedSections) : mergedSections;
     const withTypography =
       pageKey === 'site-layout' ? normalizeTypographySections(withLogo) : withLogo;
-    const nextSections = applyFixedLinkValues(pageKey, withTypography);
-    setSectionsObject(nextSections);
-    setSectionsText(JSON.stringify(nextSections, null, 2));
+    setSectionsObject(withTypography);
+    setSectionsText(JSON.stringify(withTypography, null, 2));
     setSeoText(JSON.stringify(data.seo ?? {}, null, 2));
     setPublished(Boolean(data.published));
   };
@@ -800,12 +719,14 @@ export function ContentManager({ token }: ContentManagerProps) {
       if (!isAllowedPageKey(selectedKey)) {
         throw new Error('허용되지 않은 페이지 키입니다. 프리셋 페이지만 저장할 수 있습니다.');
       }
-      const parsedSections = JSON.parse(sectionsText) as Record<string, unknown>;
-      const normalized = normalizeHomeSectionsKeys(selectedKey, parsedSections);
+      const baseSections = advancedMode
+        ? (JSON.parse(sectionsText) as Record<string, unknown>)
+        : sectionsObject;
+      const normalized = normalizeHomeSectionsKeys(selectedKey, baseSections);
       const withLogo = selectedKey === 'site-layout' ? normalizeLogoSections(normalized) : normalized;
       const withTypography =
         selectedKey === 'site-layout' ? normalizeTypographySections(withLogo) : withLogo;
-      const sections = applyFixedLinkValues(selectedKey, withTypography);
+      const sections = withTypography;
       const seo = JSON.parse(seoText);
 
       const response = await fetch(`${apiBaseUrl}/content/admin/pages/${selectedKey}`, {

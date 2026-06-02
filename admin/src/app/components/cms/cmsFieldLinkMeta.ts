@@ -1,23 +1,5 @@
 import { FRONT_PREVIEW_ORIGIN } from './cmsFieldPlacementMeta';
 
-/** CMS에서 편집 UI에 숨기지만, 프론트에서는 고정·자동 연결되는 내부 경로 */
-export const CMS_FIXED_LINK_VALUES_BY_PAGE: Record<string, Record<string, string>> = {
-  home: {
-    'features.0.link': '/business/core-competence',
-    'features.1.link': '/company/awards',
-    'features.2.link': '/company/awards',
-    'features.3.link': '/business/farm',
-    'featuredCards.0.link': '/products/forest',
-    'featuredCards.1.link': '/products/agriculture',
-    'featuredCards.2.link': '/products/forest',
-    'featuredCards.3.link': '/products/manufactured',
-    'communityPosts.0.link': '/community/story',
-    'communityPosts.1.link': '/community/story',
-    'communityPosts.2.link': '/community/concert',
-    'communityPosts.3.link': '/community/story',
-  },
-};
-
 const ROUTE_LABELS: Record<string, string> = {
   '/': '메인 홈',
   '/login': '로그인',
@@ -45,14 +27,6 @@ const ROUTE_LABELS: Record<string, string> = {
   '/community/small-music': '커뮤니티 · 작은음악회',
 };
 
-const STATIC_NAV_LINKS: Record<
-  string,
-  { href: string; routeLabel: string; isFixed: boolean }
-> = {
-  'topMenu.loginLabel': { href: '/login', routeLabel: '로그인 페이지', isFixed: true },
-  'topMenu.mypageLabel': { href: '/mypage', routeLabel: '마이페이지', isFixed: true },
-};
-
 const SIBLING_LINK_PREFIXES = ['features', 'heroActions', 'featuredCards', 'communityPosts'] as const;
 
 export type CmsFieldLinkInfo = {
@@ -61,7 +35,6 @@ export type CmsFieldLinkInfo = {
   previewUrl: string;
   isFixed: boolean;
   kind: 'internal' | 'external' | 'mailto' | 'tel';
-  /** 화면에서 클릭해 페이지·앱이 이동하는 링크 */
   isNavigation: boolean;
 };
 
@@ -88,30 +61,19 @@ const resolveSiblingLinkPath = (fieldPath: string): string | null => {
   return null;
 };
 
-const resolveHrefForPath = (
-  pageKey: string,
-  path: string,
-  getValue: (path: string) => string
-): { href: string; isFixed: boolean } | null => {
-  const fixed = CMS_FIXED_LINK_VALUES_BY_PAGE[pageKey]?.[path];
-  if (fixed) return { href: fixed, isFixed: true };
-  const raw = getValue(path).trim();
-  if (!raw) return null;
-  return { href: raw, isFixed: false };
-};
-
 export const resolveCmsFieldLink = (
   pageKey: string,
   fieldPath: string,
   getValue: (path: string) => string
 ): CmsFieldLinkInfo | null => {
-  const staticNav = STATIC_NAV_LINKS[fieldPath];
-  if (staticNav) {
+  if (fieldPath === 'topMenu.loginLink' || fieldPath === 'topMenu.mypageLink') {
+    const href = getValue(fieldPath).trim();
+    if (!href) return null;
     return {
-      href: staticNav.href,
-      routeLabel: staticNav.routeLabel,
-      previewUrl: buildPreviewUrl(staticNav.href, 'internal'),
-      isFixed: staticNav.isFixed,
+      href,
+      routeLabel: formatRouteLabel(href),
+      previewUrl: buildPreviewUrl(href, 'internal'),
+      isFixed: false,
       kind: 'internal',
       isNavigation: true,
     };
@@ -124,7 +86,7 @@ export const resolveCmsFieldLink = (
       href: `mailto:${email}`,
       routeLabel: '이메일 앱 열기',
       previewUrl: `mailto:${email}`,
-      isFixed: true,
+      isFixed: false,
       kind: 'mailto',
       isNavigation: true,
     };
@@ -142,7 +104,7 @@ export const resolveCmsFieldLink = (
       href: `tel:${phone}`,
       routeLabel: '전화 앱 연결',
       previewUrl: `tel:${phone}`,
-      isFixed: true,
+      isFixed: false,
       kind: 'tel',
       isNavigation: true,
     };
@@ -156,16 +118,15 @@ export const resolveCmsFieldLink = (
   if (sibling) linkPaths.push(sibling);
 
   for (const path of linkPaths) {
-    const resolved = resolveHrefForPath(pageKey, path, getValue);
-    if (!resolved?.href) continue;
-    const { href, isFixed } = resolved;
+    const href = getValue(path).trim();
+    if (!href) continue;
     const isExternal = /^https?:\/\//i.test(href);
     const kind: CmsFieldLinkInfo['kind'] = isExternal ? 'external' : 'internal';
     return {
       href,
       routeLabel: isExternal ? '외부 웹사이트' : formatRouteLabel(href),
       previewUrl: buildPreviewUrl(href, kind),
-      isFixed: isFixed || isFixedLinkField(path),
+      isFixed: false,
       kind,
       isNavigation: true,
     };
@@ -174,7 +135,7 @@ export const resolveCmsFieldLink = (
   return null;
 };
 
-export const isFixedLinkField = (path: string): boolean => /(^|\.)link$/i.test(path);
+export const isFixedLinkField = (_path: string): boolean => false;
 
 export const isCmsNavigationLinkField = (
   pageKey: string,

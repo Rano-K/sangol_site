@@ -24,18 +24,9 @@ interface FaqManagerProps {
 const PAGE_SIZE_OPTIONS = [10, 20, 30, 40, 50] as const;
 
 const DEFAULT_SUPPORT_SECTIONS: Record<string, unknown> = {
-  header: {
-    title: '고객센터',
-    subtitle: '무엇을 도와드릴까요? 산골의 고객센터입니다.',
-  },
-  consult: {
-    phone: '1522-4680',
-    weekday: '09:00 - 18:00',
-    lunch: '12:00 - 13:00',
-    closed: '주말 및 공휴일 휴무',
-  },
-  privacyText:
-    '1. 수집하는 개인정보 항목: 이름, 연락처, 이메일\n2. 수집 및 이용 목적: 문의 내역 확인 및 답변 처리, 처리 내역 안내\n3. 보유 및 이용 기간: 문의 처리 완료 후 3년간 보관',
+  header: { title: '', subtitle: '', bannerImage: '' },
+  consult: { phone: '', weekday: '', lunch: '', closed: '' },
+  privacyText: '',
   faqs: [],
 };
 
@@ -60,7 +51,7 @@ export function FaqManager({ token }: FaqManagerProps) {
       const data = await response.json();
       if (response.status === 404) {
         const initial: SupportPage = {
-          title: '고객센터',
+          title: '',
           sections: DEFAULT_SUPPORT_SECTIONS,
           seo: {},
           published: true,
@@ -73,7 +64,7 @@ export function FaqManager({ token }: FaqManagerProps) {
       const sections = (data.sections ?? {}) as Record<string, unknown>;
       const nextFaqs = Array.isArray(sections.faqs) ? (sections.faqs as FaqItem[]) : [];
       setSupportPage({
-        title: data.title ?? '고객센터',
+        title: data.title ?? '',
         sections,
         seo: (data.seo ?? {}) as Record<string, unknown>,
         published: Boolean(data.published),

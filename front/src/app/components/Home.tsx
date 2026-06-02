@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Link } from "react-router";
 import { ArrowRight, Award, CheckCircle2, ChevronRight, MessageCircle, Phone, Shield, Truck, Leaf } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { useCmsPage } from "../hooks/useCmsPage";
+import { getCmsMediaFileUrl, useCmsPage } from "../hooks/useCmsPage";
 import { useAuth } from "../hooks/useAuth";
 import { API_BASE_URL } from "../lib/apiBaseUrl";
 import { getCommunityPostListTitle } from "../lib/communityPost";
@@ -30,27 +30,34 @@ type HomeCommunityPost = { title: string; date: string; link: string };
 type CommunityPostApiRow = { id: number; title: string; created_at: string; is_secret?: boolean };
 type NoticeRow = { id: number; title: string; is_important: boolean; created_at: string };
 type HomeHeroAction = { label: string; link: string; variant: "primary" | "outline" };
-type HomeTrustBadge = { title: string; desc: string; iconUrl?: string };
+type HomeTrustBadge = { title: string; desc: string; iconUrl?: string; iconMediaId?: string | number };
 
-const DEFAULT_HERO_IMAGES = [
-  "https://images.unsplash.com/photo-1733837323673-da9b3a98135e?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1920",
-  "https://images.unsplash.com/photo-1741515044901-58696421d24a?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1920",
-  "https://images.unsplash.com/photo-1695798790639-c3c4294373ab?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1920",
-];
+const parseHomeFeatures = (raw: unknown): HomeCard[] => {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const row = item as Partial<HomeCard>;
+      const title = String(row.title ?? "").trim();
+      const img = String(row.img ?? "").trim();
+      if (!title && !img) return null;
+      return {
+        title,
+        desc: String(row.desc ?? "").trim(),
+        link: String(row.link ?? "").trim(),
+        img,
+      };
+    })
+    .filter((item): item is HomeCard => item !== null);
+};
 
-const DEFAULT_FEATURES: HomeCard[] = [
-  { title: "핵심 역량", desc: "청정 원산지 경쟁력과 K-푸드 프리미엄 브랜드 구축을 위한 친환경 재배 기술", link: "/business/core-competence", img: "https://images.unsplash.com/photo-1719254871588-b4a0e8ba9035?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxmYXJtaW5nJTIwcHJvY2VzcyUyMG5hdHVyZXxlbnwxfHx8fDE3NzMyMjE5MjV8MA&ixlib=rb-4.1.0&q=80&w=1080" },
-  { title: "품질인증", desc: "2024 농산물 우수관리(GAP) 인증 및 무농약 친환경 재배 방식 고수", link: "/company/awards", img: "https://images.unsplash.com/photo-1658864679847-c96c1794ff2f?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxxdWFsaXR5JTIwb3JnYW5pYyUyMGZhcm0lMjBzaWdufGVufDF8fHx8MTc3MzIyMTkyNXww&ixlib=rb-4.1.0&q=80&w=1080" },
-  { title: "수상현황", desc: "2025 임산물 국가통합 및 프리미엄 브랜드 지정기업 인증 획득", link: "/company/awards", img: "https://images.unsplash.com/photo-1742887205589-266ab1623152?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxwcmVtaXVtJTIwaGFydmVzdCUyMGZhcm18ZW58MXx8fHwxNzczMjIxOTI0fDA&ixlib=rb-4.1.0&q=80&w=1080" },
-  { title: "농장 소개", desc: "정직과 신뢰를 바탕으로 자연 그대로 재배하는 화천 고냉지 농장", link: "/business/farm", img: "https://images.unsplash.com/photo-1644615339756-0afa02e886f0?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxncmVlbmhvdXNlJTIwZmFybSUyMG5hdHVyZXxlbnwxfHx8fDE3NzMyMjE5MjV8MA&ixlib=rb-4.1.0&q=80&w=1080" },
-];
-
-const DEFAULT_PRODUCTS: HomeProduct[] = [
-  { name: "명품 산양삼", category: "임산물", img: "https://images.unsplash.com/photo-1622256075005-551338a107fb?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080", link: "/products/forest", price: 0 },
-  { name: "고냉지 토마토", category: "농산물", img: "https://images.unsplash.com/photo-1631292171396-26a654f51c48?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080", link: "/products/agriculture", price: 0 },
-  { name: "생표고버섯", category: "임산물", img: "https://images.unsplash.com/photo-1603651645989-3c7d3520a912?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080", link: "/products/forest", price: 0 },
-  { name: "산골 식혜·수정과", category: "가공제품", img: "https://images.unsplash.com/photo-1715017245420-9638115138a4?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080", link: "/products/manufactured", price: 0 },
-];
+const resolveTrustBadgeIcon = (badge: Partial<HomeTrustBadge>): string => {
+  const mediaId = Number(badge.iconMediaId);
+  if (Number.isFinite(mediaId) && mediaId > 0) {
+    return getCmsMediaFileUrl(mediaId) || "";
+  }
+  return String(badge.iconUrl ?? "").trim();
+};
 
 const parseProductPrice = (price: ProductApiRow["price"]): number => {
   if (price === null || price === undefined) return 0;
@@ -98,26 +105,6 @@ const formatDateYMD = (value: string): string => {
   return `${yyyy}.${mm}.${dd}`;
 };
 
-const DEFAULT_HERO_ACTIONS: HomeHeroAction[] = [
-  { label: "상품 둘러보기", link: "/products/forest", variant: "primary" },
-];
-
-const DEFAULT_TRUST_BADGES: HomeTrustBadge[] = [
-  { title: "안전한 원산지", desc: "산지 추적 관리", iconUrl: "https://img.icons8.com/color/96/certificate.png" },
-  { title: "품질 인증", desc: "엄격한 선별 기준", iconUrl: "https://img.icons8.com/color/96/medal2.png" },
-  { title: "빠른 배송", desc: "신선도 우선 출고", iconUrl: "https://img.icons8.com/color/96/delivery.png" },
-  { title: "검수 완료", desc: "출고 전 품질 점검", iconUrl: "https://img.icons8.com/color/96/checked--v1.png" },
-];
-
-const LEGACY_HERO_TITLE = "자연의 가치를 지키고\n소비자의 삶에 건강과\n행복을 더하는 것을\n목표로 하고 있습니다.";
-const UPDATED_HERO_TITLE = "자연의 생명력을 그대로 담아,\n(주)산골이 건강한 약속을 전합니다";
-
-const withFixedFeatureLinks = (items: HomeCard[]): HomeCard[] =>
-  items.map((item, index) => ({
-    ...item,
-    link: DEFAULT_FEATURES[index]?.link || item.link,
-  }));
-
 export function Home() {
   const [currentSlide, setCurrentSlide] = useState(0);
   const reduceMotion = useReducedMotion();
@@ -136,43 +123,39 @@ export function Home() {
   const [popularCarouselApi, setPopularCarouselApi] = useState<CarouselApi>();
   const [isPopularCarouselPaused, setIsPopularCarouselPaused] = useState(false);
 
-  const heroImages =
-    Array.isArray(sections.heroImages) && sections.heroImages.length > 0
-      ? (sections.heroImages as string[])
-      : DEFAULT_HERO_IMAGES;
-  // admin에서 홈 카드(핵심역량) 텍스트/이미지를 함께 수정 가능
-  const cmsFeatures = Array.isArray(sections.features) ? (sections.features as Partial<HomeCard>[]) : [];
-  const features = withFixedFeatureLinks(
-    DEFAULT_FEATURES.map((base, idx) => ({
-      ...base,
-      title:
-        typeof cmsFeatures[idx]?.title === "string" && cmsFeatures[idx]?.title
-          ? String(cmsFeatures[idx].title)
-          : base.title,
-      desc:
-        typeof cmsFeatures[idx]?.desc === "string" && cmsFeatures[idx]?.desc
-          ? String(cmsFeatures[idx].desc)
-          : base.desc,
-      img:
-        typeof cmsFeatures[idx]?.img === "string" && cmsFeatures[idx]?.img
-          ? String(cmsFeatures[idx].img)
-          : base.img,
-    }))
-  );
-
+  const heroImages = (Array.isArray(sections.heroImages) ? sections.heroImages : [])
+    .map((url) => String(url ?? "").trim())
+    .filter(Boolean);
+  const features = parseHomeFeatures(sections.features);
   const supportSection = (sections.support ?? {}) as Record<string, string>;
-  const heroActions = (
-    Array.isArray(sections.heroActions) && sections.heroActions.length > 0
-      ? (sections.heroActions as HomeHeroAction[])
-      : DEFAULT_HERO_ACTIONS
-  ).filter((action) => action.link !== "/order");
-  const trustBadges =
-    Array.isArray(sections.trustBadges) && sections.trustBadges.length > 0
-      ? (sections.trustBadges as HomeTrustBadge[])
-      : DEFAULT_TRUST_BADGES;
+  const heroActions = (Array.isArray(sections.heroActions) ? (sections.heroActions as HomeHeroAction[]) : [])
+    .map((action) => ({
+      label: String(action?.label ?? "").trim(),
+      link: String(action?.link ?? "").trim(),
+      variant: action?.variant === "outline" ? "outline" : "primary",
+    }))
+    .filter((action) => action.label && action.link && action.link !== "/order");
+  const trustBadges = (Array.isArray(sections.trustBadges) ? (sections.trustBadges as Partial<HomeTrustBadge>[]) : [])
+    .map((badge) => ({
+      title: String(badge?.title ?? "").trim(),
+      desc: String(badge?.desc ?? "").trim(),
+      iconUrl: resolveTrustBadgeIcon(badge),
+    }))
+    .filter((badge) => badge.title || badge.desc);
+  const heroSubtitle = String(heroSection.subtitle ?? "").trim();
+  const heroTitle = String(heroSection.title ?? "").trim();
+  const heroSubtitle2 = String(heroSection.subtitle2 ?? "").trim();
+  const hasHeroContent = heroImages.length > 0 || heroSubtitle || heroTitle || heroSubtitle2 || heroActions.length > 0;
+  const hasTrustBadges = trustBadges.length > 0;
+  const introHasContent =
+    Boolean(introSection.iconUrl?.trim()) ||
+    Boolean(introSection.title?.trim()) ||
+    Boolean(introSection.description1?.trim()) ||
+    Boolean(introSection.description2?.trim());
 
 
   useEffect(() => {
+    if (heroImages.length < 2) return;
     const timer = setInterval(() => {
       setCurrentSlide((prev) => (prev + 1) % heroImages.length);
     }, HERO_SLIDE_MS);
@@ -244,9 +227,9 @@ export function Home() {
           ),
           price: parseProductPrice(row.price),
         }));
-        setPopularProducts(top.length > 0 ? top : DEFAULT_PRODUCTS);
+        setPopularProducts(top);
       } catch (_error) {
-        setPopularProducts(DEFAULT_PRODUCTS);
+        setPopularProducts([]);
       }
     };
 
@@ -280,8 +263,9 @@ export function Home() {
 
   return (
     <div className="flex-1 flex flex-col">
-      {/* Hero Section */}
+      {hasHeroContent ? (
       <section className="relative h-[620px] md:h-[720px] w-full overflow-hidden flex items-center justify-center text-center group">
+        {heroImages.length > 0 ? (
         <AnimatePresence mode="sync" initial={false}>
           <motion.div
             key={currentSlide}
@@ -292,7 +276,7 @@ export function Home() {
             transition={{ duration: reduceMotion ? 0.2 : 0.85, ease: [0.22, 1, 0.36, 1] }}
           >
             <img
-              src={heroImages[currentSlide]}
+              src={heroImages[currentSlide % heroImages.length]}
               alt=""
               className={cn(
                 "absolute inset-0 h-full w-full object-cover hero-image-tone",
@@ -303,6 +287,9 @@ export function Home() {
             />
           </motion.div>
         </AnimatePresence>
+        ) : (
+          <div className="absolute inset-0 z-0 bg-gradient-to-br from-[#1A4D2E] to-[#2d5016]" aria-hidden />
+        )}
         <motion.div className="absolute inset-0 bg-gradient-to-r from-black/78 via-black/58 to-black/38 z-10" aria-hidden />
         <motion.div className="absolute inset-0 bg-black/15 z-10" aria-hidden />
 
@@ -318,31 +305,30 @@ export function Home() {
             },
           }}
         >
+          {heroSubtitle ? (
           <motion.p
             variants={{ hidden: { opacity: 0, y: 18 }, visible: { opacity: 1, y: 0 } }}
             transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
             className="text-base md:text-xl font-medium text-[#E8DFCA] mb-5 tracking-wide [text-shadow:0_2px_10px_rgba(0,0,0,0.45)]"
           >
-            {heroSection.subtitle || "강원도 화천 청정 두메산골에서 자란 명품 임산물과 고냉지 농산물"}
+            {heroSubtitle}
           </motion.p>
+          ) : null}
+          {heroTitle ? (
           <motion.h1
             variants={{ hidden: { opacity: 0, y: 22 }, visible: { opacity: 1, y: 0 } }}
             transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
             className="text-4xl md:text-5xl lg:text-6xl font-extrabold mb-8 leading-[1.25] text-white tracking-tight [text-shadow:0_3px_18px_rgba(0,0,0,0.55)]"
           >
-            {((heroSection.title && heroSection.title.trim() && heroSection.title !== LEGACY_HERO_TITLE)
-              ? heroSection.title
-              : UPDATED_HERO_TITLE
-            )
-              .split("\n")
-              .map((line, idx) => (
+            {heroTitle.split("\n").map((line, idx) => (
                 <span key={idx}>
                   {line}
                   <br />
                 </span>
               ))}
           </motion.h1>
-          {heroSection.subtitle2 ? (
+          ) : null}
+          {heroSubtitle2 ? (
             <motion.p
               variants={{ hidden: { opacity: 0, y: 16 }, visible: { opacity: 1, y: 0 } }}
               transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
@@ -360,12 +346,12 @@ export function Home() {
           >
             {heroActions.map((action, index) => {
               const isPrimaryAction =
-                (action.label || "").includes("주문") || action.variant === "primary" || index === 1;
+                action.label.includes("주문") || action.variant === "primary" || index === 1;
 
               return (
                 <Link
                   key={`${action.label}-${index}`}
-                  to={action.link || "/products/forest"}
+                  to={action.link}
                   className={
                     isPrimaryAction
                       ? "px-7 py-3.5 rounded-full bg-[#D1A24A] text-[#1A2F1E] font-extrabold shadow-[0_8px_24px_rgba(0,0,0,0.28)] hover:bg-[#C39237] transition-all"
@@ -382,7 +368,8 @@ export function Home() {
             variants={{ hidden: { opacity: 0 }, visible: { opacity: 1 } }}
             className="flex justify-center gap-3 mt-12"
           >
-              {heroImages.map((_, i) => (
+              {heroImages.length > 1
+                ? heroImages.map((_, i) => (
                 <button
                   key={i}
                   type="button"
@@ -394,20 +381,22 @@ export function Home() {
                   aria-label={`${i + 1}번째 슬라이드`}
                   aria-current={i === currentSlide}
                 />
-              ))}
+              ))
+                : null}
           </motion.div>
         </motion.div>
       </section>
+      ) : null}
 
+      {hasTrustBadges ? (
       <section className="py-10 bg-gradient-to-b from-[#F5F7F1] to-white border-b border-[#E8EDE2]">
         <div className="site-container grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {[Shield, Award, Truck, CheckCircle2].map((Icon, index) => {
-            const badge = trustBadges[index] || DEFAULT_TRUST_BADGES[index];
-            const iconUrl = badge.iconUrl || DEFAULT_TRUST_BADGES[index]?.iconUrl || "";
+          {trustBadges.map((badge, index) => {
+            const Icon = [Shield, Award, Truck, CheckCircle2][index % 4];
             return (
               <div key={`${badge.title}-${index}`} className="rounded-2xl border border-[#E1E8D9] bg-white px-4 py-4 flex items-center gap-3">
-                {iconUrl ? (
-                  <img src={iconUrl} alt={`${badge.title} 아이콘`} className="w-5 h-5 object-contain" />
+                {badge.iconUrl ? (
+                  <img src={badge.iconUrl} alt={`${badge.title} 아이콘`} className="w-5 h-5 object-contain" />
                 ) : (
                   <Icon className="w-5 h-5 text-[#1A4D2E]" />
                 )}
@@ -420,8 +409,9 @@ export function Home() {
           })}
         </div>
       </section>
+      ) : null}
 
-      {/* About CEO / Philosophy Section (New Addition based on Analysis) */}
+      {introHasContent ? (
       <section className="py-20 bg-[#FAFAF7]">
         <div className="site-container site-container--narrow text-center">
           {introSection.iconUrl ? (
@@ -433,29 +423,36 @@ export function Home() {
           ) : (
             <Leaf className="w-12 h-12 text-[#1A4D2E] mx-auto mb-6" />
           )}
+          {introSection.title ? (
           <h2 className="text-3xl font-extrabold text-[#1A4D2E] mb-6">
-            {introSection.title || '"신뢰를 바탕으로 건강한 먹거리를 공급합니다"'}
+            {introSection.title}
           </h2>
+          ) : null}
+          {introSection.description1 ? (
           <p className="text-[#4F6F52] text-lg leading-relaxed mb-4">
-            {(introSection.description1 || "금융권 경력을 뒤로하고 고향으로 돌아와 설립한 농업법인 (주)산골은\n강원도 화천의 맑은 자연이 주는 선물에 정성을 더해 명품 임산물을 키워냅니다.").split("\n").map((line, idx) => (
+            {introSection.description1.split("\n").map((line, idx) => (
               <span key={idx}>
                 {line}
                 <br className="hidden md:block" />
               </span>
             ))}
           </p>
+          ) : null}
+          {introSection.description2 ? (
           <p className="text-gray-500">
-            {(introSection.description2 || "사람과 자연의 조화, 그리고 정직과 신뢰의 경영 철학으로\n지속가능한 체험·가공·관광 농업의 비전을 실현하며 K-푸드 프리미엄 브랜드로 도약하겠습니다.").split("\n").map((line, idx) => (
+            {introSection.description2.split("\n").map((line, idx) => (
               <span key={idx}>
                 {line}
                 <br className="hidden md:block" />
               </span>
             ))}
           </p>
+          ) : null}
         </div>
       </section>
+      ) : null}
 
-      {/* Body Section 1: 기업 핵심 가치 (Feature Cards) */}
+      {features.length > 0 ? (
       <section className="py-24 bg-white relative">
         <div className="site-container">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -478,15 +475,18 @@ export function Home() {
                   <p className="text-gray-600 text-[15px] leading-relaxed mb-8 flex-grow">
                     {feature.desc}
                   </p>
-                  <Link to={feature.link || "#"} className="flex items-center gap-2 text-[#4F6F52] font-semibold text-sm group-hover:text-[#1A4D2E] mt-auto w-fit">
+                  {feature.link ? (
+                  <Link to={feature.link} className="flex items-center gap-2 text-[#4F6F52] font-semibold text-sm group-hover:text-[#1A4D2E] mt-auto w-fit">
                     자세히 보기 <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                   </Link>
+                  ) : null}
                 </div>
               </motion.div>
             ))}
           </div>
         </div>
       </section>
+      ) : null}
 
       {/* Body Section 2: 주요 상품 라인업 (Product Cards) */}
       <section className="py-24 bg-[#FAFAF7]">
@@ -689,15 +689,19 @@ export function Home() {
                 </div>
                 <div className="text-center md:text-left">
                   <p className="text-sm font-bold text-[#4F6F52] mb-1">고객센터</p>
-                  <p className="text-3xl md:text-[2rem] font-extrabold text-[#1A4D2E] mb-2 tracking-tight">{supportSection.phone || "-"}</p>
+                  <p className="text-3xl md:text-[2rem] font-extrabold text-[#1A4D2E] mb-2 tracking-tight">
+                    {String(supportSection.phone ?? "").trim() || "-"}
+                  </p>
+                  {String(supportSection.notice ?? "").trim() ? (
                   <p className="text-sm text-gray-500 leading-relaxed">
-                    {(supportSection.notice || "주말 및 공휴일은 상담 불가하므로\n평일 업무 시간 내 문의 부탁드립니다.").split("\n").map((line, idx) => (
+                    {String(supportSection.notice).split("\n").map((line, idx) => (
                       <span key={idx}>
                         {line}
                         <br className="hidden md:block" />
                       </span>
                     ))}
                   </p>
+                  ) : null}
                 </div>
               </div>
             </div>

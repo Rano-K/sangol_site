@@ -83,7 +83,9 @@ export function CompanyLocation() {
         
         <div className="relative z-10 text-center text-white px-6">
           <MapPin className="w-8 h-8 mx-auto mb-4 opacity-80" />
-          <h1 className="text-3xl md:text-5xl font-extrabold tracking-tight mb-4">{header.title || "오시는 길"}</h1>
+          {String(header.title ?? "").trim() ? (
+            <h1 className="text-3xl md:text-5xl font-extrabold tracking-tight mb-4">{String(header.title).trim()}</h1>
+          ) : null}
           {header.subtitle ? <p className="text-[#E8DFCA] text-lg">{header.subtitle}</p> : null}
         </div>
       </div>
@@ -186,7 +188,7 @@ export function CompanyLocation() {
             <div>
               <h2 className="text-2xl font-extrabold text-[#1A4D2E] flex items-center gap-2">
                 <Store className="w-6 h-6 text-[#4F6F52]" /> 
-                {table.title || "가맹점 현황"}
+                {table.title || "-"}
               </h2>
             </div>
             {table.dateText ? (

@@ -17,6 +17,8 @@ const NODE_ENV = process.env.NODE_ENV || 'development';
 const LOG_LEVEL = (process.env.LOG_LEVEL || (NODE_ENV === 'production' ? 'info' : 'debug')) as LogLevel;
 const LOG_FORMAT = (process.env.LOG_FORMAT || 'line') as LogFormat;
 const LOG_MAX_BODY_LENGTH = Number(process.env.LOG_MAX_BODY_LENGTH || 1000);
+const LOG_COLOR_ENABLED = process.env.LOG_COLOR_ENABLED !== 'false';
+const LOG_COMPACT = process.env.LOG_COMPACT === 'true';
 const LOG_BODY_ENABLED_ENV = process.env.LOG_BODY_ENABLED === 'true';
 const LOG_BODY_ENABLED = NODE_ENV === 'development' ? true : NODE_ENV === 'production' ? false : LOG_BODY_ENABLED_ENV;
 const LOG_FILE_ENABLED = process.env.LOG_FILE_ENABLED === 'true';
@@ -60,6 +62,63 @@ const safeSerialize = (value: unknown): string => {
 
 const shouldLog = (level: LogLevel): boolean => levelOrder[level] >= levelOrder[LOG_LEVEL];
 const truncate = (text: string): string => (text.length > LOG_MAX_BODY_LENGTH ? `${text.slice(0, LOG_MAX_BODY_LENGTH)}...(truncated)` : text);
+const ANSI = {
+  reset: '\x1b[0m',
+  bold: '\x1b[1m',
+  dim: '\x1b[2m',
+  red: '\x1b[31m',
+  yellow: '\x1b[33m',
+  green: '\x1b[32m',
+  cyan: '\x1b[36m',
+  blue: '\x1b[34m',
+  magenta: '\x1b[35m',
+  gray: '\x1b[90m',
+} as const;
+const supportsColor = (): boolean => LOG_COLOR_ENABLED && process.stdout.isTTY && NODE_ENV !== 'test' && LOG_FORMAT !== 'json';
+const colorize = (text: string, color: string, bold = false): string =>
+  supportsColor() ? `${bold ? ANSI.bold : ''}${color}${text}${ANSI.reset}` : text;
+const colorByStatus = (statusCode: number): string =>
+  statusCode >= 500 ? ANSI.red : statusCode >= 400 ? ANSI.yellow : statusCode >= 300 ? ANSI.cyan : ANSI.green;
+const colorByMethod = (method: string): string => {
+  if (method === 'GET') return ANSI.blue;
+  if (method === 'POST') return ANSI.green;
+  if (method === 'PUT' || method === 'PATCH') return ANSI.cyan;
+  if (method === 'DELETE') return ANSI.red;
+  return ANSI.magenta;
+};
+const getStatusLabel = (statusCode: number): string => {
+  if (statusCode >= 500) return 'SERVER_ERROR';
+  if (statusCode >= 400) return 'CLIENT_ERROR';
+  if (statusCode >= 300) return 'REDIRECT';
+  return 'OK';
+};
+
+const summarizeValueForLine = (value: unknown): string => {
+  if (value === null || value === undefined) return '-';
+  if (typeof value === 'string') return truncate(value);
+  if (Array.isArray(value)) return `array(${value.length})`;
+  if (typeof value === 'object') {
+    const keys = Object.keys(value as Record<string, unknown>);
+    if (keys.length === 0) return '{}';
+    return `object(${keys.slice(0, 6).join(',')}${keys.length > 6 ? ',...' : ''})`;
+  }
+  return String(value);
+};
+
+const formatMultilineDetail = (label: string, value: unknown): string => {
+  const serialized = truncate(safeSerialize(value));
+  const displayLabel = colorize(label, ANSI.gray, true);
+  return `    ${displayLabel}: ${serialized}`;
+};
+
+const padRight = (value: string, width: number): string => (value.length >= width ? value : `${value}${' '.repeat(width - value.length)}`);
+const formatClock = (timestamp: unknown): string => {
+  const date = new Date(String(timestamp || Date.now()));
+  const hh = String(date.getHours()).padStart(2, '0');
+  const mm = String(date.getMinutes()).padStart(2, '0');
+  const ss = String(date.getSeconds()).padStart(2, '0');
+  return `${hh}:${mm}:${ss}`;
+};
 
 const maskPrimitive = (value: unknown): unknown => {
   if (typeof value === 'string') return value.length <= 2 ? '**' : `${value.slice(0, 1)}***${value.slice(-1)}`;
@@ -106,35 +165,60 @@ const summarizeBody = (payload: unknown): unknown => {
 
 const writeStructuredLog = (entry: Record<string, unknown>) => {
   if (!shouldLog((entry.level as LogLevel) || 'info')) return;
+  const statusCode = Number(entry.statusCode ?? 0);
+  const method = String(entry.method || '').toUpperCase();
+  const methodWithColor = colorize(method, colorByMethod(method), true);
+  const statusWithColor = colorize(`${getStatusLabel(statusCode)}(${String(entry.statusCode ?? '-')})`, colorByStatus(statusCode), true);
+  const tagWithColor =
+    entry.tag === 'API ERROR'
+      ? colorize(String(entry.tag), ANSI.red, true)
+      : colorize(String(entry.tag || 'LOG'), ANSI.green, true);
+  const durationText = `${String(entry.durationMs ?? '-')}ms`;
+  const durationWithColor =
+    typeof entry.durationMs === 'number' && Number(entry.durationMs) > 1000
+      ? colorize(durationText, ANSI.yellow, true)
+      : colorize(durationText, ANSI.cyan);
+
   const line =
     LOG_FORMAT === 'json'
       ? safeSerialize(entry)
       : [
-          `[${String(entry.tag || 'LOG')}]`,
-          `${String(entry.method || '')} ${String(entry.path || '')}`.trim(),
-          `status=${String(entry.statusCode ?? '-')}`,
-          `duration=${String(entry.durationMs ?? '-')}ms`,
-          `requestId=${String(entry.requestId ?? '-')}`,
-          `time=${String(entry.timestamp ?? '-')}`,
-          `ip=${String(entry.ip ?? '-')}`,
-          `userAgent=${truncate(String(entry.userAgent ?? '-'))}`,
-          `params=${truncate(safeSerialize(entry.params ?? null))}`,
-          `query=${truncate(safeSerialize(entry.query ?? null))}`,
-          `requestBody=${truncate(safeSerialize(entry.requestBody ?? null))}`,
-          `responseBody=${truncate(safeSerialize(entry.responseBody ?? null))}`,
-          `userId=${String(entry.userId ?? '-')}`,
-          `role=${String(entry.role ?? '-')}`,
-          `message=${String(entry.message || '-')}`,
-        ]
-          .filter(Boolean)
-          .join(' | ');
+          `[${tagWithColor}]`,
+          colorize(formatClock(entry.timestamp), ANSI.gray),
+          `${padRight(methodWithColor, 8)} ${String(entry.path || '')}`.trim(),
+          statusWithColor,
+          durationWithColor,
+          `req=${colorize(String(entry.requestId ?? '-'), ANSI.magenta)}`,
+        ].join(' | ');
+
+  const isErrorLike = Number(entry.statusCode ?? 0) >= 400 || entry.level === 'error';
+  const showBodyDetail = LOG_BODY_ENABLED && (LOG_LEVEL === 'debug' || isErrorLike);
+  const userSummary = entry.userId ? `${String(entry.userId)} (${String(entry.role ?? '-')})` : '-';
+  const metaLines = [
+    `    ${colorize('user', ANSI.gray, true)}: ${colorize(userSummary, ANSI.blue)}`,
+    `    ${colorize('ip', ANSI.gray, true)}: ${colorize(String(entry.ip ?? '-'), ANSI.gray)}`,
+    `    ${colorize('query', ANSI.gray, true)}: ${colorize(summarizeValueForLine(entry.query), ANSI.gray)}`,
+    `    ${colorize('params', ANSI.gray, true)}: ${colorize(summarizeValueForLine(entry.params), ANSI.gray)}`,
+    `    ${colorize('msg', ANSI.gray, true)}: ${colorize(String(entry.message || '-'), ANSI.gray)}`,
+  ];
+  const detailLines = showBodyDetail
+    ? [
+        '    ---- details ----',
+        formatMultilineDetail('requestBody', entry.requestBody ?? null),
+        formatMultilineDetail('responseBody', entry.responseBody ?? null),
+      ]
+    : [];
+
+  const userAgentDetail = LOG_LEVEL === 'debug' ? `    userAgent: ${truncate(String(entry.userAgent ?? '-'))}` : '';
+  const fullBlock = [line, ...metaLines, userAgentDetail, ...detailLines].filter(Boolean).join('\n');
+  const finalLine = LOG_COMPACT ? line : fullBlock;
 
   if (entry.level === 'error') {
     // eslint-disable-next-line no-console
-    console.error(line);
+    console.error(finalLine);
   } else {
     // eslint-disable-next-line no-console
-    console.log(line);
+    console.log(finalLine);
   }
 
   if (LOG_FILE_ENABLED) {

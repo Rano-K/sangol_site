@@ -848,10 +848,10 @@ export function Products() {
                   </div>
                   <div className="w-full md:w-auto flex flex-col sm:flex-row sm:items-center gap-3">
                     <Link
-                      to="/order"
+                      to="/mypage#franchise-orders"
                       className="w-full sm:w-auto px-8 py-2 bg-white hover:bg-gray-50 text-[#1A4D2E] text-sm font-bold rounded-xl border border-[#E8DFCA] shadow-sm transition-colors text-center"
                     >
-                      주문 내역 상세 보기
+                      주문 내역 보기
                     </Link>
                     <Link
                       to="/order"
@@ -878,10 +878,10 @@ export function Products() {
                 </p>
                 <div className="flex gap-2 sm:shrink-0">
                   <Link
-                    to="/order"
+                    to="/mypage#franchise-orders"
                     className="flex-1 sm:flex-none px-5 py-2 bg-white hover:bg-gray-50 text-[#1A4D2E] text-sm font-bold rounded-xl border border-[#E8DFCA] text-center"
                   >
-                    상세 보기
+                    주문 내역
                   </Link>
                   <Link
                     to="/order"

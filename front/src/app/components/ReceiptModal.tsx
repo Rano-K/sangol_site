@@ -1,6 +1,9 @@
 import { useEffect } from "react";
+import { Link } from "react-router";
 import { CheckCircle2, X } from "lucide-react";
 import { useCmsPage } from "../hooks/useCmsPage";
+
+export const FRANCHISE_ORDERS_HISTORY_PATH = "/mypage#franchise-orders";
 
 type OrderedItem = {
   code: string;
@@ -16,23 +19,31 @@ interface ReceiptModalProps {
   orderId?: number;
   onClose: () => void;
   onConfirm: () => void;
+  orderHistoryPath?: string;
+  onGoToOrderHistory?: () => void;
 }
 
-export function ReceiptModal({ items, total, orderId, onClose, onConfirm }: ReceiptModalProps) {
+export function ReceiptModal({
+  items,
+  total,
+  orderId,
+  onClose,
+  onConfirm,
+  orderHistoryPath = FRANCHISE_ORDERS_HISTORY_PATH,
+  onGoToOrderHistory,
+}: ReceiptModalProps) {
   const { data: orderCms } = useCmsPage("order");
   const paymentSection =
     orderCms?.sections && typeof orderCms.sections === "object"
       ? ((orderCms.sections as Record<string, unknown>).payment as Record<string, unknown> | undefined)
       : undefined;
   const depositAccountName =
-    (typeof paymentSection?.accountName === "string" && paymentSection.accountName.trim()) ||
-    ((import.meta.env["VITE_B2B_DEPOSIT_ACCOUNT_NAME"] as string | undefined) ?? "");
+    typeof paymentSection?.accountName === "string" ? paymentSection.accountName.trim() : "";
   const depositAccountNumber =
-    (typeof paymentSection?.accountNumber === "string" && paymentSection.accountNumber.trim()) ||
-    ((import.meta.env["VITE_B2B_DEPOSIT_ACCOUNT_NUMBER"] as string | undefined) ?? "");
+    typeof paymentSection?.accountNumber === "string" ? paymentSection.accountNumber.trim() : "";
   const requiredNotice =
-    (typeof paymentSection?.requiredNotice === "string" && paymentSection.requiredNotice.trim()) ||
-    "※ 반드시 입금 후 주문을 확정해 주세요. 미입금 시 출고가 진행되지 않습니다.";
+    typeof paymentSection?.requiredNotice === "string" ? paymentSection.requiredNotice.trim() : "";
+  const hasPaymentInfo = Boolean(depositAccountName || depositAccountNumber || requiredNotice);
 
   const date = new Date().toLocaleDateString('ko-KR', {
     year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit'
@@ -102,24 +113,54 @@ export function ReceiptModal({ items, total, orderId, onClose, onConfirm }: Rece
 
         {/* Footer */}
         <div className="bg-white p-6 border-t border-gray-200 border-dashed">
-          <div className="mb-4 rounded-lg border border-[#E6ECE1] bg-[#F7FAF5] p-3">
-            <p className="text-xs font-semibold text-[#6A756B]">입금 계좌 안내 (임시)</p>
-            <p className="mt-1 text-sm font-bold text-[#1A4D2E]">{depositAccountName || "계좌명을 관리자에서 설정해 주세요."}</p>
-            <p className="text-sm font-semibold text-[#1A4D2E]">{depositAccountNumber || "계좌번호를 관리자에서 설정해 주세요."}</p>
-            <p className="mt-2 text-sm font-extrabold text-red-600">
-              {requiredNotice}
-            </p>
-          </div>
-          <div className="flex justify-between items-end mb-6">
+          <div className="flex justify-between items-end mb-4">
             <span className="text-lg font-bold text-gray-600">주문 총 금액</span>
             <span className="text-3xl font-extrabold text-[#1A4D2E]">{total.toLocaleString()}원</span>
           </div>
-          <button
-            onClick={onConfirm}
-            className="w-full py-4 bg-[#1A4D2E] hover:bg-[#123A21] text-white text-lg font-bold rounded-xl transition-colors"
-          >
-            확인 및 닫기
-          </button>
+
+          {hasPaymentInfo ? (
+            <div className="mb-4 rounded-xl border-2 border-[#1A4D2E]/25 bg-[#F7FAF5] p-4">
+              <p className="text-sm font-extrabold text-[#1A4D2E]">입금 계좌 안내</p>
+              <p className="mt-1 text-xs text-[#5F675B] leading-relaxed">
+                아래 계좌로 입금해 주세요.
+                {orderId ? (
+                  <span className="block mt-1 font-semibold text-[#1A4D2E]">
+                    입금자명·메모에 주문번호 #{orderId}를 적어 주시면 확인이 빠릅니다.
+                  </span>
+                ) : null}
+              </p>
+              {depositAccountName ? (
+                <p className="mt-3 text-sm font-bold text-[#1A4D2E]">예금주: {depositAccountName}</p>
+              ) : null}
+              {depositAccountNumber ? (
+                <p className="mt-1 text-base font-extrabold text-[#1A4D2E] tracking-tight">{depositAccountNumber}</p>
+              ) : null}
+              {requiredNotice ? (
+                <p className="mt-3 text-sm font-extrabold text-red-600 leading-snug">{requiredNotice}</p>
+              ) : null}
+            </div>
+          ) : (
+            <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+              입금 계좌 정보가 아직 등록되지 않았습니다. 관리자(프론트 콘텐츠 → 주문 페이지)에 문의해 주세요.
+            </div>
+          )}
+
+          <div className="flex flex-col gap-3">
+            <Link
+              to={orderHistoryPath}
+              onClick={() => onGoToOrderHistory?.()}
+              className="w-full py-4 bg-[#1A4D2E] hover:bg-[#123A21] text-white text-lg font-bold rounded-xl transition-colors text-center"
+            >
+              주문 내역 보기
+            </Link>
+            <button
+              type="button"
+              onClick={onConfirm}
+              className="w-full py-3.5 border border-[#D2DAC7] text-[#4F6F52] text-base font-bold rounded-xl transition-colors hover:bg-[#F4F7EF]"
+            >
+              확인 및 닫기
+            </button>
+          </div>
         </div>
         
       </div>

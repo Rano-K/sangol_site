@@ -633,8 +633,17 @@ const LOCATION_FRANCHISE_SELECT = `
   LEFT JOIN users u
     ON u.franchise_id = l.id
    AND u.role = 'franchise'
-  GROUP BY l.id
 `;
+
+const locationFranchiseListQuery = (): string =>
+  `${LOCATION_FRANCHISE_SELECT}
+  GROUP BY l.id
+  ORDER BY display_order ASC, id ASC`;
+
+const locationFranchiseByIdQuery = (): string =>
+  `${LOCATION_FRANCHISE_SELECT}
+  WHERE l.id = $1
+  GROUP BY l.id`;
 
 const syncSingleLocationFranchiseToFranchise = async (locationId: number): Promise<void> => {
   await ensureFranchiseKeyColumnsReady();
@@ -739,10 +748,7 @@ router.get('/location-franchises', async (_req: Request, res: Response) => {
   try {
     await ensureFranchiseKeyColumnsReady();
     await syncAllLocationFranchisesToFranchises();
-    const { rows } = await pool.query(
-      `${LOCATION_FRANCHISE_SELECT}
-       ORDER BY display_order ASC, id ASC`
-    );
+    const { rows } = await pool.query(locationFranchiseListQuery());
     res.json(rows);
   } catch (error) {
     console.error('Get admin location franchises error:', error);
@@ -812,11 +818,7 @@ router.post(
         [locationId]
       );
       await syncSingleLocationFranchiseToFranchise(locationId);
-      const { rows: syncedRows } = await pool.query(
-        `${LOCATION_FRANCHISE_SELECT}
-         WHERE l.id = $1`,
-        [locationId]
-      );
+      const { rows: syncedRows } = await pool.query(locationFranchiseByIdQuery(), [locationId]);
       res.status(201).json({ message: '가맹점이 등록되었습니다.', franchise: syncedRows[0] ?? null });
     } catch (error) {
       if ((error as { code?: string }).code === '23505') {
@@ -900,11 +902,7 @@ router.patch(
       }
       const locationId = Number(rows[0].id);
       await syncSingleLocationFranchiseToFranchise(locationId);
-      const { rows: syncedRows } = await pool.query(
-        `${LOCATION_FRANCHISE_SELECT}
-         WHERE l.id = $1`,
-        [locationId]
-      );
+      const { rows: syncedRows } = await pool.query(locationFranchiseByIdQuery(), [locationId]);
       res.json({ message: '가맹점이 수정되었습니다.', franchise: syncedRows[0] ?? null });
     } catch (error) {
       if ((error as { code?: string }).code === '23505') {

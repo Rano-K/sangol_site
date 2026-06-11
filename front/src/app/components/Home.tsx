@@ -17,13 +17,12 @@ const POPULAR_PRODUCT_LIMIT = 16;
 const POPULAR_CARD_CLASS = "pl-4 basis-[280px] sm:basis-[300px]";
 
 type HomeCard = { title: string; desc: string; link: string; img: string };
-type HomeProduct = { id?: number; name: string; category: string; img: string; link?: string; price: number };
+type HomeProduct = { id?: number; name: string; category: string; img: string; link?: string };
 type ProductApiRow = {
   id: number;
   name: string;
   category: string;
   image_url?: string | null;
-  price?: string | number | null;
   is_active?: boolean;
 };
 type HomeCommunityPost = { title: string; date: string; link: string };
@@ -58,15 +57,6 @@ const resolveTrustBadgeIcon = (badge: Partial<HomeTrustBadge>): string => {
   }
   return String(badge.iconUrl ?? "").trim();
 };
-
-const parseProductPrice = (price: ProductApiRow["price"]): number => {
-  if (price === null || price === undefined) return 0;
-  const parsed = Number(price);
-  return Number.isFinite(parsed) ? parsed : 0;
-};
-
-const formatProductPriceLabel = (price: number): string =>
-  price > 0 ? `${price.toLocaleString("ko-KR")}원` : "가격 문의";
 
 /** 카테고리를 골고루 섞어 인기 상품 목록 구성 */
 const pickDiversePopularProducts = (rows: ProductApiRow[], limit: number): ProductApiRow[] => {
@@ -225,7 +215,6 @@ export function Home() {
             { id: row.id, category: row.category },
             { isFranchiseUser }
           ),
-          price: parseProductPrice(row.price),
         }));
         setPopularProducts(top);
       } catch (_error) {
@@ -549,9 +538,6 @@ export function Home() {
                         <h3 className="text-xl font-bold text-[#1A4D2E] group-hover:text-[#4F6F52] transition-colors line-clamp-2">
                           {product.name}
                         </h3>
-                        <p className="text-lg font-black text-[#1A4D2E] mt-2 tabular-nums">
-                          {formatProductPriceLabel(product.price)}
-                        </p>
                       </div>
                     </Link>
                   </CarouselItem>

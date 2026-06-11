@@ -152,15 +152,43 @@ export function Franchises({ token }: FranchisesProps) {
     }
   };
 
-  const remove = async (id: number) => {
-    if (!window.confirm('이 가맹점을 비노출 처리할까요?')) return;
+  const toggleVisibility = async (row: FranchiseRow) => {
+    const nextActive = !row.is_active;
+    const actionLabel = nextActive ? '노출' : '비노출';
+    if (!window.confirm(`이 가맹점을 ${actionLabel} 처리할까요?`)) return;
     try {
-      const response = await fetch(`${apiBaseUrl}/admin/location-franchises/${id}`, {
+      const response = await fetch(`${apiBaseUrl}/admin/location-franchises/${row.id}`, {
+        method: 'PATCH',
+        headers: {
+          ...authHeader,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ isActive: nextActive }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data?.error || `가맹점 ${actionLabel} 처리 실패`);
+      window.alert(`가맹점이 ${actionLabel} 처리되었습니다.`);
+      await loadFranchises();
+    } catch (toggleError) {
+      window.alert(toggleError instanceof Error ? toggleError.message : `가맹점 ${actionLabel} 처리 중 오류`);
+    }
+  };
+
+  const remove = async (row: FranchiseRow) => {
+    const linkedCount = Number(row.linked_member_count || 0);
+    const confirmMessage =
+      linkedCount > 0
+        ? `연결된 가맹점 회원이 ${linkedCount}명 있습니다. 회원 연결을 해제하지 않으면 삭제할 수 없습니다.\n\n그래도 삭제를 시도할까요?`
+        : '이 가맹점을 DB에서 완전히 삭제할까요?\n삭제 후에는 복구할 수 없습니다.';
+    if (!window.confirm(confirmMessage)) return;
+    try {
+      const response = await fetch(`${apiBaseUrl}/admin/location-franchises/${row.id}`, {
         method: 'DELETE',
         headers: authHeader,
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data?.error || '가맹점 삭제 실패');
+      window.alert('가맹점이 삭제되었습니다.');
       await loadFranchises();
     } catch (deleteError) {
       window.alert(deleteError instanceof Error ? deleteError.message : '가맹점 삭제 중 오류');
@@ -272,11 +300,17 @@ export function Franchises({ token }: FranchisesProps) {
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-700">{row.is_active ? '노출' : '비노출'}</td>
                       <td className="px-6 py-4">
-                        <div className="flex gap-3 text-sm">
+                        <div className="flex flex-wrap gap-3 text-sm">
                           <button onClick={() => startEdit(row)} className="text-green-700 hover:text-green-800 font-medium">
                             수정
                           </button>
-                          <button onClick={() => remove(row.id)} className="text-red-600 hover:text-red-700 font-medium">
+                          <button
+                            onClick={() => toggleVisibility(row)}
+                            className="text-amber-700 hover:text-amber-800 font-medium"
+                          >
+                            {row.is_active ? '비노출' : '노출'}
+                          </button>
+                          <button onClick={() => remove(row)} className="text-red-600 hover:text-red-700 font-medium">
                             삭제
                           </button>
                         </div>

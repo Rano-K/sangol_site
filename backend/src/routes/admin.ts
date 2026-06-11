@@ -918,21 +918,43 @@ router.patch(
 router.delete('/location-franchises/:id', param('id').isInt({ min: 1 }), async (req: Request, res: Response) => {
   if (!validate(req, res)) return;
   const id = Number(req.params.id);
+  const client = await pool.connect();
   try {
     await ensureFranchiseKeyColumnsReady();
-    const result = await pool.query(
-      'UPDATE location_franchises SET is_active = FALSE, updated_at = NOW() WHERE id = $1',
+    const { rows: linkedMemberRows } = await client.query<{ count: number }>(
+      `SELECT COUNT(*)::int AS count
+       FROM users
+       WHERE franchise_id = $1
+         AND role = 'franchise'`,
       [id]
     );
-    if ((result.rowCount || 0) === 0) {
+    const linkedMemberCount = Number(linkedMemberRows[0]?.count ?? 0);
+    if (linkedMemberCount > 0) {
+      res.status(409).json({
+        error:
+          '연결된 가맹점 회원이 있어 삭제할 수 없습니다. 회원 관리에서 가맹점 연결을 해제한 후 다시 시도하세요.',
+      });
+      return;
+    }
+
+    await client.query('BEGIN');
+    const locationResult = await client.query('SELECT id FROM location_franchises WHERE id = $1', [id]);
+    if ((locationResult.rowCount || 0) === 0) {
+      await client.query('ROLLBACK');
       res.status(404).json({ error: '삭제할 가맹점을 찾을 수 없습니다.' });
       return;
     }
-    await syncSingleLocationFranchiseToFranchise(id);
-    res.json({ message: '가맹점이 비노출 처리되었습니다.' });
+
+    await client.query('DELETE FROM franchises WHERE id = $1', [id]);
+    await client.query('DELETE FROM location_franchises WHERE id = $1', [id]);
+    await client.query('COMMIT');
+    res.json({ message: '가맹점이 삭제되었습니다.' });
   } catch (error) {
+    await client.query('ROLLBACK');
     console.error('Delete admin location franchise error:', error);
     res.status(500).json({ error: '가맹점 삭제 중 오류가 발생했습니다.' });
+  } finally {
+    client.release();
   }
 });
 

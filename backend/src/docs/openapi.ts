@@ -630,10 +630,13 @@ export const openApiSpec = {
       },
       delete: {
         tags: ["Admin"],
-        summary: "가맹점(위치) 비활성화",
+        summary: "가맹점(위치) 완전 삭제",
         security: [{ bearerAuth: [] }],
         parameters: [{ in: "path", name: "id", required: true, schema: { type: "integer", minimum: 1 } }],
-        responses: { "200": { description: "삭제(비활성) 성공" } },
+        responses: {
+          "200": { description: "삭제 성공" },
+          "409": { description: "연결된 가맹점 회원 존재" },
+        },
       },
     },
     "/api/admin/dashboard/stats": {

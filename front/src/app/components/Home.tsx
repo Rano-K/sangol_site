@@ -58,34 +58,6 @@ const resolveTrustBadgeIcon = (badge: Partial<HomeTrustBadge>): string => {
   return String(badge.iconUrl ?? "").trim();
 };
 
-/** 카테고리를 골고루 섞어 인기 상품 목록 구성 */
-const pickDiversePopularProducts = (rows: ProductApiRow[], limit: number): ProductApiRow[] => {
-  const buckets = new Map<string, ProductApiRow[]>();
-  for (const row of rows) {
-    const category = String(row.category || "").trim() || "기타";
-    const list = buckets.get(category) ?? [];
-    list.push(row);
-    buckets.set(category, list);
-  }
-  const categories = [...buckets.keys()].sort((a, b) => a.localeCompare(b, "ko"));
-  const picked: ProductApiRow[] = [];
-  let round = 0;
-  while (picked.length < limit) {
-    let added = false;
-    for (const category of categories) {
-      const list = buckets.get(category) ?? [];
-      if (round < list.length) {
-        picked.push(list[round]);
-        added = true;
-        if (picked.length >= limit) break;
-      }
-    }
-    if (!added) break;
-    round += 1;
-  }
-  return picked.length > 0 ? picked : rows.slice(0, limit);
-};
-
 const formatDateYMD = (value: string): string => {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return "-";
@@ -199,23 +171,25 @@ export function Home() {
       try {
         const headers: HeadersInit = {};
         if (token) headers.Authorization = `Bearer ${token}`;
-        const response = await fetch(`${apiBaseUrl}/products`, { signal: controller.signal, headers });
+        const response = await fetch(
+          `${apiBaseUrl}/products/popular?limit=${POPULAR_PRODUCT_LIMIT}`,
+          { signal: controller.signal, headers }
+        );
         const data = await response.json();
-        if (!response.ok) throw new Error(data?.error || "상품 목록 조회 실패");
+        if (!response.ok) throw new Error(data?.error || "인기 상품 목록 조회 실패");
         const rows = Array.isArray(data) ? (data as ProductApiRow[]) : [];
-        const eligible = rows
+        const top = rows
           .filter((row) => row && row.name && row.category && row.is_active !== false)
-          .filter((row) => isFranchiseUser || String(row.category || "").trim() !== "재공품");
-        const top = pickDiversePopularProducts(eligible, POPULAR_PRODUCT_LIMIT).map((row) => ({
-          id: row.id,
-          name: row.name,
-          category: row.category,
-          img: row.image_url || "",
-          link: buildProductCatalogHref(
-            { id: row.id, category: row.category },
-            { isFranchiseUser }
-          ),
-        }));
+          .map((row) => ({
+            id: row.id,
+            name: row.name,
+            category: row.category,
+            img: row.image_url || "",
+            link: buildProductCatalogHref(
+              { id: row.id, category: row.category },
+              { isFranchiseUser }
+            ),
+          }));
         setPopularProducts(top);
       } catch (_error) {
         setPopularProducts([]);

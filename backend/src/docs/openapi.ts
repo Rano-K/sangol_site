@@ -47,7 +47,10 @@ export const openApiSpec = {
       LoginResponse: {
         type: "object",
         properties: {
-          token: { type: "string" },
+          token: { type: "string", description: "Access token (기본 15분)" },
+          refreshToken: { type: "string", description: "Refresh token (유휴 1시간)" },
+          expiresIn: { type: "string", example: "15m" },
+          refreshIdleExpiresIn: { type: "string", example: "1h" },
           user: {
             type: "object",
             properties: {
@@ -59,6 +62,13 @@ export const openApiSpec = {
               franchiseKey: { type: "string", nullable: true, example: "FRA-000001" },
             },
           },
+        },
+      },
+      RefreshRequest: {
+        type: "object",
+        required: ["refreshToken"],
+        properties: {
+          refreshToken: { type: "string" },
         },
       },
       Product: {
@@ -152,6 +162,46 @@ export const openApiSpec = {
         },
       },
     },
+    "/api/auth/refresh": {
+      post: {
+        tags: ["Auth"],
+        summary: "Access token 갱신 (refresh token rotation)",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/RefreshRequest" },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "갱신 성공",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LoginResponse" },
+              },
+            },
+          },
+          "401": { description: "세션 만료 또는 유휴 시간 초과" },
+        },
+      },
+    },
+    "/api/auth/logout": {
+      post: {
+        tags: ["Auth"],
+        summary: "Refresh token 폐기",
+        requestBody: {
+          required: false,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/RefreshRequest" },
+            },
+          },
+        },
+        responses: { "200": { description: "로그아웃 성공" } },
+      },
+    },
     "/api/auth/change-password": {
       post: {
         tags: ["Auth"],
@@ -203,6 +253,22 @@ export const openApiSpec = {
             },
           },
         },
+      },
+    },
+    "/api/products/popular": {
+      get: {
+        tags: ["Products"],
+        summary: "메인 홈 인기 상품 조회",
+        parameters: [
+          {
+            in: "query",
+            name: "limit",
+            schema: { type: "integer", minimum: 1, maximum: 16 },
+            required: false,
+            description: "최대 노출 개수 (기본 16)",
+          },
+        ],
+        responses: { "200": { description: "조회 성공 (admin 지정 우선, 미지정 시 자동 선정)" } },
       },
     },
     "/api/products/{id}": {
@@ -637,6 +703,67 @@ export const openApiSpec = {
           "200": { description: "삭제 성공" },
           "409": { description: "연결된 가맹점 회원 존재" },
         },
+      },
+    },
+    "/api/admin/home-popular-products": {
+      get: {
+        tags: ["Admin"],
+        summary: "메인 홈 인기 상품 지정 목록",
+        security: [{ bearerAuth: [] }],
+        responses: { "200": { description: "조회 성공" } },
+      },
+      post: {
+        tags: ["Admin"],
+        summary: "메인 홈 인기 상품 추가",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["productId"],
+                properties: { productId: { type: "integer", minimum: 1 } },
+              },
+            },
+          },
+        },
+        responses: { "201": { description: "추가 성공" }, "409": { description: "중복 또는 최대 개수 초과" } },
+      },
+    },
+    "/api/admin/home-popular-products/order": {
+      put: {
+        tags: ["Admin"],
+        summary: "메인 홈 인기 상품 순서 저장",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["productIds"],
+                properties: {
+                  productIds: {
+                    type: "array",
+                    maxItems: 16,
+                    items: { type: "integer", minimum: 1 },
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: { "200": { description: "저장 성공" } },
+      },
+    },
+    "/api/admin/home-popular-products/{id}": {
+      delete: {
+        tags: ["Admin"],
+        summary: "메인 홈 인기 상품 제거",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ in: "path", name: "id", required: true, schema: { type: "integer", minimum: 1 } }],
+        responses: { "200": { description: "제거 성공" } },
       },
     },
     "/api/admin/dashboard/stats": {

@@ -18,7 +18,7 @@ import { Orders } from './Orders';
 import { Franchises } from './Franchises';
 import { Inquiries } from './Inquiries';
 import { Products } from './Products';
-import { ContentManager } from './ContentManager';
+import { FrontContentManager } from './FrontContentManager';
 import { ConcertManager } from './ConcertManager';
 import { Notices } from './Notices';
 import { FaqManager } from './FaqManager';
@@ -72,7 +72,7 @@ export function Dashboard({ token, onLogout }: DashboardProps) {
       case 'faq':
         return <FaqManager token={token} />;
       case 'content':
-        return <ContentManager token={token} />;
+        return <FrontContentManager token={token} />;
       case 'story':
         return <StoryManager token={token} />;
       case 'concert':

@@ -35,6 +35,7 @@ type MediaUsage = {
 
 interface ContentManagerProps {
   token: string;
+  embedded?: boolean;
 }
 
 type FieldType = 'text' | 'textarea' | 'image' | 'font' | 'toggle';
@@ -618,7 +619,7 @@ const normalizeLogoSections = (sections: Record<string, unknown>): Record<string
   };
 };
 
-export function ContentManager({ token }: ContentManagerProps) {
+export function ContentManager({ token, embedded = false }: ContentManagerProps) {
   const apiBaseUrl = useMemo(() => API_BASE_URL, []);
 
   const [pages, setPages] = useState<CmsPage[]>([]);
@@ -1322,12 +1323,14 @@ export function ContentManager({ token }: ContentManagerProps) {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-gray-800">프론트 콘텐츠 관리</h2>
-        <p className="text-sm text-gray-500 mt-1">
-          운영자가 실제 화면 기준으로 문구/이미지/아이콘을 수정할 수 있는 관리 화면입니다.
-        </p>
-      </div>
+      {!embedded ? (
+        <div>
+          <h2 className="text-2xl font-bold text-gray-800">프론트 콘텐츠 관리</h2>
+          <p className="text-sm text-gray-500 mt-1">
+            운영자가 실제 화면 기준으로 문구/이미지/아이콘을 수정할 수 있는 관리 화면입니다.
+          </p>
+        </div>
+      ) : null}
 
       {message && <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-lg">{message}</div>}
       {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">{error}</div>}
@@ -1395,7 +1398,7 @@ export function ContentManager({ token }: ContentManagerProps) {
             </p>
             {selectedKey === 'home' ? (
               <div className="text-sm text-green-700 mt-2 space-y-1">
-                <p>인기 상품 영역: 이제 상품관리 DB(`/admin/products`) 데이터를 자동 반영하며, 이 화면에서 별도 편집하지 않습니다.</p>
+                <p>인기 상품 영역: 상단 메뉴의 <strong>인기상품 관리</strong>에서 노출 상품을 지정합니다. 미지정 시 상품 DB에서 자동 선정됩니다.</p>
                 <p>핵심역량 카드 항목: 메인 페이지 중단의 "핵심역량 카드 4개"와 1:1로 연결됩니다.</p>
               </div>
             ) : null}

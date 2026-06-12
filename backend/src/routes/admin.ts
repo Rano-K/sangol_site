@@ -8,6 +8,12 @@ import {
   inventoryNoteSuffix,
   syncOrderInventoryOnStatusChange,
 } from '../services/orderInventory';
+import {
+  HOME_POPULAR_PRODUCT_LIMIT,
+  ensureHomePopularProductsTableReady,
+  listCuratedPopularProducts,
+  reorderHomePopularProducts,
+} from '../services/homePopularProducts';
 
 const router = express.Router();
 const ALLOWED_IMAGE_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
@@ -955,6 +961,108 @@ router.delete('/location-franchises/:id', param('id').isInt({ min: 1 }), async (
     res.status(500).json({ error: '가맹점 삭제 중 오류가 발생했습니다.' });
   } finally {
     client.release();
+  }
+});
+
+// 메인 홈 인기 상품 지정
+router.get('/home-popular-products', async (_req: Request, res: Response) => {
+  try {
+    const items = await listCuratedPopularProducts();
+    res.json(items);
+  } catch (error) {
+    console.error('Get admin home popular products error:', error);
+    res.status(500).json({ error: '인기 상품 목록을 불러오는 중 오류가 발생했습니다.' });
+  }
+});
+
+router.post(
+  '/home-popular-products',
+  body('productId').isInt({ min: 1 }),
+  async (req: Request, res: Response) => {
+    if (!validate(req, res)) return;
+    const productId = Number(req.body.productId);
+    try {
+      await ensureHomePopularProductsTableReady();
+      const { rows: productRows } = await pool.query<{ id: number }>(
+        'SELECT id FROM products WHERE id = $1',
+        [productId]
+      );
+      if (productRows.length === 0) {
+        res.status(404).json({ error: '추가할 상품을 찾을 수 없습니다.' });
+        return;
+      }
+
+      const { rows: countRows } = await pool.query<{ count: number }>(
+        'SELECT COUNT(*)::int AS count FROM home_popular_products'
+      );
+      if (Number(countRows[0]?.count ?? 0) >= HOME_POPULAR_PRODUCT_LIMIT) {
+        res.status(409).json({
+          error: `인기 상품은 최대 ${HOME_POPULAR_PRODUCT_LIMIT}개까지 지정할 수 있습니다.`,
+        });
+        return;
+      }
+
+      const { rows: orderRows } = await pool.query<{ next_order: number }>(
+        'SELECT COALESCE(MAX(display_order), -1) + 1 AS next_order FROM home_popular_products'
+      );
+      const displayOrder = Number(orderRows[0]?.next_order ?? 0);
+
+      await pool.query(
+        `INSERT INTO home_popular_products (product_id, display_order)
+         VALUES ($1, $2)`,
+        [productId, displayOrder]
+      );
+
+      const items = await listCuratedPopularProducts();
+      res.status(201).json({ message: '인기 상품에 추가되었습니다.', items });
+    } catch (error) {
+      if ((error as { code?: string }).code === '23505') {
+        res.status(409).json({ error: '이미 인기 상품으로 지정된 상품입니다.' });
+        return;
+      }
+      console.error('Create admin home popular product error:', error);
+      res.status(500).json({ error: '인기 상품 추가 중 오류가 발생했습니다.' });
+    }
+  }
+);
+
+router.put(
+  '/home-popular-products/order',
+  body('productIds').isArray({ min: 0, max: HOME_POPULAR_PRODUCT_LIMIT }),
+  body('productIds.*').isInt({ min: 1 }),
+  async (req: Request, res: Response) => {
+    if (!validate(req, res)) return;
+    const productIds = (req.body.productIds as number[]).map((id) => Number(id));
+    try {
+      await reorderHomePopularProducts(productIds);
+      const items = await listCuratedPopularProducts();
+      res.json({ message: '인기 상품 순서가 저장되었습니다.', items });
+    } catch (error) {
+      if ((error as { code?: string }).code === 'INVALID_PRODUCT_IDS') {
+        res.status(400).json({ error: '저장할 인기 상품 목록이 올바르지 않습니다. 새로고침 후 다시 시도하세요.' });
+        return;
+      }
+      console.error('Reorder admin home popular products error:', error);
+      res.status(500).json({ error: '인기 상품 순서 저장 중 오류가 발생했습니다.' });
+    }
+  }
+);
+
+router.delete('/home-popular-products/:id', param('id').isInt({ min: 1 }), async (req: Request, res: Response) => {
+  if (!validate(req, res)) return;
+  const id = Number(req.params.id);
+  try {
+    await ensureHomePopularProductsTableReady();
+    const result = await pool.query('DELETE FROM home_popular_products WHERE id = $1', [id]);
+    if ((result.rowCount || 0) === 0) {
+      res.status(404).json({ error: '삭제할 인기 상품 항목을 찾을 수 없습니다.' });
+      return;
+    }
+    const items = await listCuratedPopularProducts();
+    res.json({ message: '인기 상품에서 제거되었습니다.', items });
+  } catch (error) {
+    console.error('Delete admin home popular product error:', error);
+    res.status(500).json({ error: '인기 상품 제거 중 오류가 발생했습니다.' });
   }
 });
 

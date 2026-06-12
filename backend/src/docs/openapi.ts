@@ -836,7 +836,7 @@ export const openApiSpec = {
       },
       delete: {
         tags: ["Admin"],
-        summary: "관리자 공지 삭제(비활성)",
+        summary: "관리자 공지 완전 삭제",
         security: [{ bearerAuth: [] }],
         parameters: [{ in: "path", name: "id", required: true, schema: { type: "integer", minimum: 1 } }],
         responses: { "200": { description: "삭제 성공" } },

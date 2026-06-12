@@ -2157,18 +2157,15 @@ router.patch(
   }
 );
 
-// 공지 삭제(비활성)
+// 공지 완전 삭제
 router.delete('/notices/:id', param('id').isInt({ min: 1 }), async (req: Request, res: Response) => {
   if (!validate(req, res)) return;
 
   const noticeId = Number(req.params.id);
   try {
     await ensureNoticeColumnsReady();
-    const result = await pool.query(
-      'UPDATE notices SET is_active = FALSE, updated_at = NOW() WHERE id = $1',
-      [noticeId]
-    );
-    if (result.rowCount === 0) {
+    const result = await pool.query('DELETE FROM notices WHERE id = $1', [noticeId]);
+    if ((result.rowCount ?? 0) === 0) {
       res.status(404).json({ error: '삭제할 공지사항을 찾을 수 없습니다.' });
       return;
     }

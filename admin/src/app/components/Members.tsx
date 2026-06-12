@@ -195,8 +195,12 @@ export function Members({ token }: MembersProps) {
     setMessage('');
     try {
       const response = await fetch(`${apiBaseUrl}/admin/members/${memberId}`, {
-        method: 'DELETE',
-        headers: authHeaders,
+        method: 'PATCH',
+        headers: {
+          ...authHeaders,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ isActive: false }),
       });
       const data = await parseJsonSafely(response);
       if (!response.ok) throw new Error(getApiErrorMessage(data, '회원 비활성 실패'));
@@ -204,6 +208,33 @@ export function Members({ token }: MembersProps) {
       await loadAll();
     } catch (deleteError) {
       setError(deleteError instanceof Error ? deleteError.message : '회원 비활성에 실패했습니다.');
+    }
+  };
+
+  const removeMember = async (member: Member) => {
+    if (
+      !window.confirm(
+        `"${member.email}" 회원을 DB에서 완전히 삭제할까요?\n삭제 후에는 복구할 수 없습니다.`
+      )
+    ) {
+      return;
+    }
+    setError('');
+    setMessage('');
+    try {
+      const response = await fetch(`${apiBaseUrl}/admin/members/${member.id}`, {
+        method: 'DELETE',
+        headers: authHeaders,
+      });
+      const data = await parseJsonSafely(response);
+      if (!response.ok) throw new Error(getApiErrorMessage(data, '회원 삭제 실패'));
+      setMessage('회원이 삭제되었습니다.');
+      if (editingMember?.id === member.id) {
+        resetForm();
+      }
+      await loadAll();
+    } catch (removeError) {
+      setError(removeError instanceof Error ? removeError.message : '회원 삭제에 실패했습니다.');
     }
   };
   const activateMember = async (memberId: number) => {
@@ -232,7 +263,7 @@ export function Members({ token }: MembersProps) {
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-bold text-gray-800">회원 관리</h2>
-        <p className="text-sm text-gray-500 mt-1">회원 조회/생성/수정/비활성(CRUD)을 관리합니다.</p>
+        <p className="text-sm text-gray-500 mt-1">회원 조회/생성/수정/비활성/삭제를 관리합니다.</p>
       </div>
 
       {message ? <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg">{message}</div> : null}
@@ -414,7 +445,7 @@ export function Members({ token }: MembersProps) {
                         <button
                           type="button"
                           onClick={() => void deactivateMember(member.id)}
-                          className="px-2 py-1 rounded border border-red-200 text-red-600 hover:bg-red-50"
+                          className="px-2 py-1 rounded border border-amber-200 text-amber-700 hover:bg-amber-50"
                         >
                           비활성
                         </button>
@@ -427,6 +458,13 @@ export function Members({ token }: MembersProps) {
                           활성
                         </button>
                       )}
+                      <button
+                        type="button"
+                        onClick={() => void removeMember(member)}
+                        className="px-2 py-1 rounded border border-red-200 text-red-600 hover:bg-red-50"
+                      >
+                        삭제
+                      </button>
                     </div>
                   </td>
                 </tr>

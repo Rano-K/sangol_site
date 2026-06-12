@@ -2433,20 +2433,44 @@ router.patch(
   }
 );
 
-// 회원 삭제(비활성 처리)
+// 회원 완전 삭제
 router.delete('/members/:id', param('id').isInt({ min: 1 }), async (req: Request, res: Response) => {
   if (!validate(req, res)) return;
   const memberId = Number(req.params.id);
+  const requesterId = Number(req.user?.id ?? 0);
   try {
-    const result = await pool.query(
-      'UPDATE users SET is_active = FALSE, updated_at = NOW() WHERE id = $1',
+    if (requesterId > 0 && requesterId === memberId) {
+      res.status(409).json({ error: '현재 로그인한 관리자 계정은 삭제할 수 없습니다.' });
+      return;
+    }
+
+    const { rows: targetRows } = await pool.query<{ role: 'admin' | 'franchise' }>(
+      'SELECT role FROM users WHERE id = $1',
       [memberId]
     );
+    if (targetRows.length === 0) {
+      res.status(404).json({ error: '삭제할 회원을 찾을 수 없습니다.' });
+      return;
+    }
+
+    if (targetRows[0].role === 'admin') {
+      const { rows: adminCountRows } = await pool.query<{ count: number }>(
+        `SELECT COUNT(*)::int AS count
+         FROM users
+         WHERE role = 'admin'`
+      );
+      if (Number(adminCountRows[0]?.count ?? 0) <= 1) {
+        res.status(409).json({ error: '마지막 관리자 계정은 삭제할 수 없습니다.' });
+        return;
+      }
+    }
+
+    const result = await pool.query('DELETE FROM users WHERE id = $1', [memberId]);
     if ((result.rowCount ?? 0) === 0) {
       res.status(404).json({ error: '삭제할 회원을 찾을 수 없습니다.' });
       return;
     }
-    res.json({ message: '회원이 비활성 처리되었습니다.' });
+    res.json({ message: '회원이 삭제되었습니다.' });
   } catch (error) {
     console.error('Delete admin member error:', error);
     res.status(500).json({ error: '회원 삭제 중 오류가 발생했습니다.' });

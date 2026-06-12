@@ -387,9 +387,10 @@ function FaqList({ faqs }: { faqs: FaqRow[] }) {
               >
                 <div className="p-6 bg-[#FAFAF7] rounded-xl flex items-start gap-4 mx-2 border border-[#E8DFCA] shadow-inner">
                   <span className="text-[#4F6F52] font-extrabold text-2xl w-8 text-center mt-0.5">A</span>
-                  <p className="text-gray-700 leading-relaxed text-[15px] pt-1.5 font-medium">
-                    {faq.a}
-                  </p>
+                  <div
+                    className="text-gray-700 leading-relaxed text-[15px] pt-1.5 font-medium [&_blockquote]:border-l-4 [&_blockquote]:border-[#1A4D2E]/30 [&_blockquote]:pl-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5"
+                    dangerouslySetInnerHTML={{ __html: toSafeNoticeHtml(faq.a) }}
+                  />
                 </div>
               </div>
             </div>

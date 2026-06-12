@@ -254,7 +254,9 @@ export function FaqManager({ token }: FaqManagerProps) {
                 <td className="px-6 py-4 text-sm text-gray-700">{(safeCurrentPage - 1) * pageSize + idx + 1}</td>
                 <td className="px-6 py-4 text-sm text-gray-900">{item.category}</td>
                 <td className="px-6 py-4 text-sm text-gray-900">{item.q}</td>
-                <td className="px-6 py-4 text-sm text-gray-700 max-w-[420px] truncate">{item.a}</td>
+                <td className="px-6 py-4 text-sm text-gray-700 max-w-[420px] truncate" title={getPlainTextFromHtml(item.a)}>
+                  {getPlainTextFromHtml(item.a)}
+                </td>
                 <td className="px-6 py-4">
                   <div className="flex gap-3 text-sm">
                     <button onClick={() => startEdit(item)} className="text-green-700 hover:text-green-800 font-medium">

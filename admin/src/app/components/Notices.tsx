@@ -118,17 +118,48 @@ export function Notices({ token }: NoticesProps) {
     });
   };
 
-  const handleDelete = async (noticeId: number) => {
-    const ok = window.confirm('이 공지사항을 비노출 처리할까요?');
-    if (!ok) return;
+  const toggleVisibility = async (notice: NoticeRow) => {
+    const nextActive = !notice.is_active;
+    const actionLabel = nextActive ? '노출' : '비노출';
+    if (!window.confirm(`이 공지사항을 ${actionLabel} 처리할까요?`)) return;
 
     try {
-      const response = await fetch(`${apiBaseUrl}/admin/notices/${noticeId}`, {
+      const response = await fetch(`${apiBaseUrl}/admin/notices/${notice.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ isActive: nextActive }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data?.error || `공지사항 ${actionLabel} 처리 실패`);
+      window.alert(`공지사항이 ${actionLabel} 처리되었습니다.`);
+      if (editingId === notice.id) {
+        setForm((prev) => ({ ...prev, isActive: nextActive }));
+      }
+      await loadNotices();
+    } catch (toggleError) {
+      window.alert(toggleError instanceof Error ? toggleError.message : `공지사항 ${actionLabel} 처리 중 오류`);
+    }
+  };
+
+  const removeNotice = async (notice: NoticeRow) => {
+    if (!window.confirm(`"${notice.title}" 공지사항을 DB에서 완전히 삭제할까요?\n삭제 후에는 복구할 수 없습니다.`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/admin/notices/${notice.id}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data?.error || '공지사항 삭제 실패');
+      window.alert('공지사항이 삭제되었습니다.');
+      if (editingId === notice.id) {
+        resetForm();
+      }
       await loadNotices();
     } catch (deleteError) {
       window.alert(deleteError instanceof Error ? deleteError.message : '공지사항 삭제 중 오류');
@@ -254,11 +285,17 @@ export function Notices({ token }: NoticesProps) {
                   <td className="px-6 py-4 text-sm text-gray-700">{notice.is_important ? '중요' : '-'}</td>
                   <td className="px-6 py-4 text-sm text-gray-700">{new Date(notice.created_at).toLocaleString()}</td>
                   <td className="px-6 py-4">
-                    <div className="flex items-center gap-3 text-sm">
+                    <div className="flex flex-wrap items-center gap-3 text-sm">
                       <button onClick={() => startEdit(notice)} className="text-green-700 hover:text-green-800 font-medium">
                         수정
                       </button>
-                      <button onClick={() => handleDelete(notice.id)} className="text-red-600 hover:text-red-700 font-medium">
+                      <button
+                        onClick={() => toggleVisibility(notice)}
+                        className="text-amber-700 hover:text-amber-800 font-medium"
+                      >
+                        {notice.is_active ? '비노출' : '노출'}
+                      </button>
+                      <button onClick={() => removeNotice(notice)} className="text-red-600 hover:text-red-700 font-medium">
                         삭제
                       </button>
                     </div>

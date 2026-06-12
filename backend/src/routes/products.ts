@@ -2,6 +2,7 @@ import express, { Request, Response } from 'express';
 import pool from '../config/database';
 import { canViewWipProducts, optionalAuthenticateToken } from '../middleware/auth';
 import { buildPublicApiUrl, publicApiBaseUrl } from '../utils/publicUrls';
+import { HOME_POPULAR_PRODUCT_LIMIT, listPublicPopularProducts } from '../services/homePopularProducts';
 
 const router = express.Router();
 const WIP_CATEGORY_NAME = '재공품';
@@ -170,6 +171,20 @@ router.get('/', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Get products error:', error);
     res.status(500).json({ error: '상품 목록을 불러오는 중 오류가 발생했습니다.' });
+  }
+});
+
+// 메인 홈 인기 상품 (admin 지정 우선, 미지정 시 자동 선정)
+router.get('/popular', async (req: Request, res: Response) => {
+  try {
+    const rawLimit = typeof req.query.limit === 'string' ? Number(req.query.limit) : HOME_POPULAR_PRODUCT_LIMIT;
+    const limit = Number.isFinite(rawLimit) ? rawLimit : HOME_POPULAR_PRODUCT_LIMIT;
+    const includeWip = canViewWipProducts(req);
+    const items = await listPublicPopularProducts(includeWip, limit);
+    res.json(items);
+  } catch (error) {
+    console.error('Get popular products error:', error);
+    res.status(500).json({ error: '인기 상품 목록을 불러오는 중 오류가 발생했습니다.' });
   }
 });
 

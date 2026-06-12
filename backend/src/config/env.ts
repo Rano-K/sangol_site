@@ -4,6 +4,7 @@
 
 
 import dotenv from 'dotenv';
+import { parseDurationToMs } from '../utils/duration';
 
 dotenv.config();
 
@@ -61,7 +62,11 @@ export const env = {
   DB_USER: getRequired('DB_USER'),
   DB_PASSWORD: getRequired('DB_PASSWORD'),
   JWT_SECRET: ensureJwtSecret(getRequired('JWT_SECRET')),
+  /** @deprecated Use JWT_ACCESS_EXPIRES_IN */
   JWT_EXPIRES_IN: getOptional('JWT_EXPIRES_IN', '7d'),
+  JWT_ACCESS_EXPIRES_IN: getOptional('JWT_ACCESS_EXPIRES_IN', '15m'),
+  JWT_REFRESH_IDLE_EXPIRES_IN: getOptional('JWT_REFRESH_IDLE_EXPIRES_IN', '1h'),
+  JWT_REFRESH_IDLE_MS: parseDurationToMs(getOptional('JWT_REFRESH_IDLE_EXPIRES_IN', '1h'), 'JWT_REFRESH_IDLE_EXPIRES_IN'),
   FRONTEND_URL: process.env.FRONTEND_URL?.trim() || '',
   ADMIN_URL: process.env.ADMIN_URL?.trim() || '',
   TRUST_PROXY: parseTrustProxy(getOptional('TRUST_PROXY', 'false')),

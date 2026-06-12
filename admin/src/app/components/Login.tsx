@@ -1,8 +1,14 @@
 import { useState, FormEvent } from 'react';
 import { API_BASE_URL } from '../lib/apiBaseUrl';
+import type { AuthUser } from '../lib/authSession';
 
 interface LoginProps {
-  onLogin: (token: string) => void;
+  onLogin: (payload: {
+    token: string;
+    refreshToken: string;
+    refreshIdleExpiresIn?: string;
+    user: AuthUser;
+  }) => Promise<void>;
 }
 
 export function Login({ onLogin }: LoginProps) {
@@ -30,12 +36,22 @@ export function Login({ onLogin }: LoginProps) {
         return;
       }
 
+      if (!data?.refreshToken) {
+        setError('로그인 응답에 refresh token이 없습니다. 백엔드를 최신 버전으로 업데이트해주세요.');
+        return;
+      }
+
       if (data?.user?.role !== 'admin') {
         setError('관리자 계정만 로그인할 수 있습니다.');
         return;
       }
 
-      onLogin(data.token);
+      await onLogin({
+        token: data.token,
+        refreshToken: data.refreshToken,
+        refreshIdleExpiresIn: data.refreshIdleExpiresIn,
+        user: data.user,
+      });
     } catch (fetchError) {
       setError('서버 연결에 실패했습니다. 백엔드 상태를 확인해주세요.');
     } finally {
@@ -99,8 +115,9 @@ export function Login({ onLogin }: LoginProps) {
           </button>
         </form>
 
-        <div className="mt-6 text-center text-sm text-gray-500">
+        <div className="mt-6 text-center text-sm text-gray-500 space-y-1">
           <p>관리자 계정으로만 접근 가능합니다</p>
+          <p>1시간 동안 활동이 없으면 자동 로그아웃됩니다</p>
         </div>
       </div>
     </div>

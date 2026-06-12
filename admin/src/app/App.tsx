@@ -1,24 +1,13 @@
-import { useState } from 'react';
 import { Dashboard } from './components/Dashboard';
 import { Login } from './components/Login';
+import { useAdminSession } from './hooks/useAdminSession';
 
 export default function App() {
-  const [token, setToken] = useState<string | null>(() => localStorage.getItem('admin_token'));
+  const { accessToken, login, logout } = useAdminSession();
 
-  if (!token) {
-    return <Login onLogin={(nextToken) => {
-      localStorage.setItem('admin_token', nextToken);
-      setToken(nextToken);
-    }} />;
+  if (!accessToken) {
+    return <Login onLogin={login} />;
   }
 
-  return (
-    <Dashboard
-      token={token}
-      onLogout={() => {
-        localStorage.removeItem('admin_token');
-        setToken(null);
-      }}
-    />
-  );
+  return <Dashboard token={accessToken} onLogout={() => void logout()} />;
 }
